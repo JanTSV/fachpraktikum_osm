@@ -1,0 +1,23 @@
+# Object files
+*.o
+
+# Executables
+main
+
+# Build directory
+/build/
+
+# MacOS metadata
+.DS_Store
+
+# Editor/IDE files
+*.swp
+*.swo
+*.swn
+*~
+.vscode/
+.idea/
+*.code-workspace
+
+# OSM files
+*.osm.pbf
