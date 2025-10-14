@@ -3,6 +3,7 @@ CXX = g++
 
 # Compiler and linker flags
 CXXFLAGS = -Wall -Wextra -std=c++17 -Iinclude
+LIBS = -lz -lbz2 -lexpat
 
 # Source and build directories
 SRC_DIR = src
@@ -23,7 +24,7 @@ all: $(TARGET)
 
 # Link object files into the final executable
 $(TARGET): $(OBJ)
-	$(CXX) $(CXXFLAGS) -o $@ $^
+	$(CXX) $(CXXFLAGS) -o $@ $^ $(LIBS)
 
 # Compile source files into object files in build/
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
