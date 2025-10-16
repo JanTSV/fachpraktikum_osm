@@ -2,7 +2,7 @@
 *.o
 
 # Executables
-main
+osm
 
 # Build directory
 /build/

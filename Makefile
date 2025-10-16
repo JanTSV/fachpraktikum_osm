@@ -17,7 +17,7 @@ SRC = $(wildcard $(SRC_DIR)/*.cpp)
 OBJ = $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(SRC))
 
 # Target executable name
-TARGET = main
+TARGET = osm
 
 # Default target
 all: $(TARGET)
@@ -34,5 +34,8 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
 # Clean build files
 clean:
 	rm -rf $(OBJ_DIR) $(TARGET)
+
+run: $(TARGET)
+	./$(TARGET) $(FILE)
 
 .PHONY: all clean
