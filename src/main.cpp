@@ -83,6 +83,31 @@ class OSMHandler : public osmium::handler::Handler {
         }
 
         void node(const osmium::Node& node) {
+            const osmium::TagList& tags = node.tags();
+
+            if (tags.get_value_by_key("building") ||
+                tags.get_value_by_key("shop") ||
+                tags.get_value_by_key("amenity")) {
+                if (!node.location()) {
+                    return;
+                }
+
+                std::cout << "Node ID: " << node.id() << std::endl;
+            }
+        }
+
+        void way(const osmium::Way& way) {
+            const osmium::TagList& tags = way.tags();
+
+            if (tags.get_value_by_key("building") ||
+                tags.get_value_by_key("shop") ||
+                tags.get_value_by_key("amenity")) {
+                if (!way.is_closed()) {
+                    return;
+                }
+
+                std::cout << "Way ID: " << way.id() << std::endl;
+            }
         }
 };
 
