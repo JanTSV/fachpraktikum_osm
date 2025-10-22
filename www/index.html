@@ -13,20 +13,29 @@
 
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script>
-    const map = L.map('map').setView([51.505, -0.09], 13); // default center
+    const map = L.map('map');
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
 
-    // TODO: Fetch buildings from server and add to map
+    // Fetch buildings from server and add to map
+    const canvasLayer = L.layerGroup([], { renderer: L.canvas() }).addTo(map);
+
     fetch('/buildings')
-      .then(response => response.json())
-      .then(data => {
-        data.forEach(pt => {
-          L.marker([pt.lat, pt.lon]).addTo(map);
-        });
+    .then(r => r.json())
+    .then(points => {
+      // center map on the first building
+      map.setView([points[0][0], points[0][1]], 16);
+
+      points.forEach(([lat, lon]) => {
+        L.circleMarker([lat, lon], {
+          radius: 2,
+          color: 'blue',
+          renderer: canvasLayer.options.renderer
+        }).addTo(canvasLayer);
       });
+    });
   </script>
 </body>
 </html>
