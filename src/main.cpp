@@ -1,3 +1,5 @@
+#include <cmath>
+#include <cstddef>
 #include <iostream>
 #include <chrono>
 #include <iomanip>
@@ -31,16 +33,57 @@ std::string get_duration(const Duration& duration) {
     return out.str();
 }
 
+struct Point {
+    private:
+        double _x;  // lat
+        double _y;  // lon
+
+    public:
+        Point(double x, double y) : _x(x), _y(y) {
+
+        }
+
+        double euclidean_distance(Point& other) {
+            return std::sqrt(std::pow(_x - other._x, 2) + std::pow(_y - other._y, 2));
+        }
+};
+
+struct Building {
+    private:
+        Point _location;
+        size_t _street_idx;
+        // TODO: house number
+
+    public:
+        Building(Point location, size_t street_idx) : _location(location), _street_idx(street_idx) {
+
+        }
+};
+
+class ISolution {
+    public:
+        virtual ~ISolution() {}
+        virtual void add_building(Building building) = 0;
+};
+
+class NaiveSolution : public ISolution {
+    public:
+        void add_building(Building building) override {
+
+        }
+};
+
 class OSMHandler : public osmium::handler::Handler {
-public:
-    void buildings(const osmium::Node& node) {
-    }
+    private:
+        ISolution& _solution;
 
-    void streets(const osmium::Way& way) {
-    }
+    public:
+        OSMHandler(ISolution& solution): _solution(solution) {
 
-    void areas(const osmium::Way& way) {
-    }
+        }
+
+        void node(const osmium::Node& node) {
+        }
 };
 
 int main(int argc, char* argv[]) {
@@ -52,7 +95,8 @@ int main(int argc, char* argv[]) {
     std::cout << "Parsing " << argv[1] << "..." << std::endl;
     auto start = std::chrono::high_resolution_clock::now();
     osmium::io::Reader reader(argv[1]);
-    OSMHandler handler;
+    NaiveSolution solution;
+    OSMHandler handler(solution);
     osmium::apply(reader, handler);
     reader.close();
     auto end = std::chrono::high_resolution_clock::now();
