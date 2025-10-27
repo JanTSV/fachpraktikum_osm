@@ -7,6 +7,7 @@
 #include <optional>
 #include <osmium/io/any_input.hpp>
 #include <osmium/handler.hpp>
+#include <osmium/osm/area.hpp>
 #include <osmium/visitor.hpp>
 #include <string>
 #include <vector>
@@ -39,9 +40,7 @@ struct Point {
     public:
         double x;  // lat
         double y;  // lon
-        Point(double x, double y) : x(x), y(y) {
-
-        }
+        Point(double x, double y) : x(x), y(y) { }
 
         double euclidean_distance(Point& other) {
             return std::sqrt(std::pow(x - other.x, 2) + std::pow(y - other.y, 2));
@@ -75,7 +74,6 @@ struct NaiveStringStore {
         }
 };
 
-// TODO: IStringStore and IBuildingStore in here
 class ISolution {
     public:
         virtual ~ISolution() {}
@@ -95,7 +93,7 @@ class NaiveSolution : public ISolution {
             if (street) {
                 street_idx = string_store.get_or_add(street);
             }
-            // onstruct Building and add to vector
+            // Construct building and add to vector
             Point location{lat, lon};
             buildings.emplace_back(location, street_idx);
         }
@@ -111,70 +109,82 @@ class OSMHandler : public osmium::handler::Handler {
         ISolution& _solution;
 
     public:
-        OSMHandler(ISolution& solution): _solution(solution) {
+        OSMHandler(ISolution& solution): _solution(solution) { }
 
+        bool is_building(const osmium::TagList& tags) {
+            return tags["building"] || tags["shop"];
+        }
+
+        const char* get_street_name(const osmium::TagList& tags) {
+            // Check for german spelling first
+            const char* street = tags.get_value_by_key("addr:street:de");
+            if (!street) {
+                // Get native spelling otherwise
+                street = tags.get_value_by_key("addr:street");
+            }
+
+            return street;
         }
 
         void node(const osmium::Node& node) {
             const osmium::TagList& tags = node.tags();
 
-            if (tags.get_value_by_key("building") ||
-                tags.get_value_by_key("shop") ||
-                tags.get_value_by_key("amenity")) {
-                if (!node.location()) {
-                    return;
-                }
+            if (!is_building(tags)) return;
 
-                const char* street = tags.get_value_by_key("addr:street");
-                // TODO: const char* housenumber = tags.get_value_by_key("addr:housenumber");
-
-                // TODO: Many dont have a street name
-                _solution.add_building(node.location().lat(), node.location().lon(), street);
+            if (!node.location()) {
+                return;
             }
+
+            // TODO: const char* housenumber = tags.get_value_by_key("addr:housenumber");
+
+            _solution.add_building(node.location().lat(), node.location().lon(), get_street_name(tags));
         }
 
         void way(const osmium::Way& way) {
             const osmium::TagList& tags = way.tags();
 
-            if (tags.get_value_by_key("building") ||
-                tags.get_value_by_key("shop") ||
-                tags.get_value_by_key("amenity")) {
-                if (!way.is_closed()) {
-                    // std::cerr << "WARNING: Building is not a closed way." << std::endl;
-                    return;
-                }
+            if (!is_building(tags)) return;
 
-                const char* street = tags.get_value_by_key("addr:street");
-                // TODO: const char* housenumber = tags.get_value_by_key("addr:housenumber");
-                
-                // Compute centroid
-                double sum_lat = 0.0, sum_lon = 0.0;
-                size_t count = 0;
-                const auto& nodes = way.nodes();
+            if (!way.is_closed()) {
+                // std::cerr << "WARNING: Building is not a closed way." << std::endl;
+                return;
+            }
 
-                // Can skip first node since its a closed way
-                for (size_t i = 1; i < nodes.size(); ++i) {
-                    const auto& node_ref = nodes[i];
-                    if (node_ref.location().valid()) {
-                        sum_lat += node_ref.location().lat();
-                        sum_lon += node_ref.location().lon();
-                        ++count;
-                    }
-                }
+            // TODO: const char* housenumber = tags.get_value_by_key("addr:housenumber");
+            
+            // Compute centroid
+            double sum_lat = 0.0, sum_lon = 0.0;
+            size_t count = 0;
+            const auto& nodes = way.nodes();
 
-                if (count > 0) {
-                    // TODO: Many dont have a street name (maybe a node in the list has?)
-                    _solution.add_building(sum_lat / count, sum_lon / count, street);
-                } else {
-                    // std::cerr << "WARNING: One way consists of 0 nodes." << std::endl;
+            // Can skip first node since its a closed way
+            for (size_t i = 1; i < nodes.size(); ++i) {
+                const auto& node_ref = nodes[i];
+                if (node_ref.location().valid()) {
+                    sum_lat += node_ref.location().lat();
+                    sum_lon += node_ref.location().lon();
+                    ++count;
                 }
+            }
+
+            if (count > 0) {
+                // TODO: Many dont have a street name (maybe a node in the list has?)
+                _solution.add_building(sum_lat / count, sum_lon / count, get_street_name(tags));
+            } else {
+                // std::cerr << "WARNING: One way consists of 0 nodes." << std::endl;
             }
         }
 
         void relation(const osmium::Relation& rel) {
-            if (!rel.tags().get_value_by_key("building")) return;
+            if (!is_building(rel.tags())) return;
 
             // TODO: Relations can be buildings.
+        }
+
+        void area(const osmium::Area& area) {
+            if (!is_building(area.tags())) return;
+
+            std::cout << "HERE" << std::endl;
         }
 };
 
@@ -193,7 +203,7 @@ int main(int argc, char* argv[]) {
     reader.close();
     auto end = std::chrono::high_resolution_clock::now();
     std::cout << "Parsing done " << get_duration(end - start) << std::endl;
-    std::cout << "NUmber of buildings: " << solution.get_buildings().size() << std::endl;
+    std::cout << "Number of buildings: " << solution.get_buildings().size() << std::endl;
 
     httplib::Server svr;
     svr.set_mount_point("/", "./www");
