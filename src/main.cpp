@@ -118,15 +118,15 @@ class OSMHandler : public osmium::handler::Handler {
         OSMHandler(ISolution& solution): _solution(solution) { }
 
         bool is_building(const osmium::TagList& tags) {
-            return tags["building"] || tags["shop"];
+            return tags["building"];
         }
 
         const char* get_street_name(const osmium::TagList& tags) {
             // Check for german spelling first
-            const char* street = tags.get_value_by_key("addr:street:de");
+            const char* street = tags["addr:street:de"];
             if (!street) {
                 // Get native spelling otherwise
-                street = tags.get_value_by_key("addr:street");
+                street = tags["addr:street"];
             }
 
             return street;
@@ -137,9 +137,7 @@ class OSMHandler : public osmium::handler::Handler {
 
             if (!is_building(tags)) return;
 
-            if (!node.location()) {
-                return;
-            }
+            if (!node.location()) return;
 
             // TODO: const char* housenumber = tags.get_value_by_key("addr:housenumber");
 
@@ -151,10 +149,7 @@ class OSMHandler : public osmium::handler::Handler {
 
             if (!is_building(tags)) return;
 
-            if (!way.is_closed()) {
-                // std::cerr << "WARNING: Building is not a closed way." << std::endl;
-                return;
-            }
+            if (!way.is_closed()) return;
 
             // TODO: const char* housenumber = tags.get_value_by_key("addr:housenumber");
             
@@ -191,9 +186,11 @@ class OSMHandler : public osmium::handler::Handler {
             double sum_lat = 0.0, sum_lon = 0.0;
             size_t count = 0;
             for (const auto& nr : *area.cbegin<osmium::OuterRing>()) {
-                sum_lat += nr.lon();
-                sum_lon += nr.lat();
-                ++count;
+                if (nr.location().valid()) {
+                    sum_lat += nr.lon();
+                    sum_lon += nr.lat();
+                    ++count;
+                }
             }
 
             if (count > 0) {
