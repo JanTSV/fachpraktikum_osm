@@ -3,18 +3,24 @@
 #include <iostream>
 #include <chrono>
 #include <iomanip>
-
 #include <optional>
+#include <string>
+#include <vector>
+
 #include <osmium/io/any_input.hpp>
 #include <osmium/handler.hpp>
 #include <osmium/osm/area.hpp>
 #include <osmium/visitor.hpp>
-#include <string>
-#include <vector>
+#include <osmium/area/assembler.hpp>
+#include <osmium/area/multipolygon_manager.hpp>
+#include <osmium/index/map/flex_mem.hpp>
+#include <osmium/handler/node_locations_for_ways.hpp>
 
 #include "httplib.h"
 
 static const int PORT = 8080;
+using index_type = osmium::index::map::FlexMem<osmium::unsigned_object_id_type, osmium::Location>;
+using location_handler_type = osmium::handler::NodeLocationsForWays<index_type>;
 
 template<typename Duration>
 std::string get_duration(const Duration& duration) {
@@ -168,23 +174,33 @@ class OSMHandler : public osmium::handler::Handler {
             }
 
             if (count > 0) {
-                // TODO: Many dont have a street name (maybe a node in the list has?)
                 _solution.add_building(sum_lat / count, sum_lon / count, get_street_name(tags));
             } else {
                 // std::cerr << "WARNING: One way consists of 0 nodes." << std::endl;
             }
         }
 
-        void relation(const osmium::Relation& rel) {
-            if (!is_building(rel.tags())) return;
-
-            // TODO: Relations can be buildings.
-        }
-
         void area(const osmium::Area& area) {
-            if (!is_building(area.tags())) return;
+            const osmium::TagList& tags = area.tags();
 
-            std::cout << "HERE" << std::endl;
+            if (!is_building(tags)) return;
+
+            // TODO: const char* housenumber = tags.get_value_by_key("addr:housenumber");
+
+            // Compute centroid
+            double sum_lat = 0.0, sum_lon = 0.0;
+            size_t count = 0;
+            for (const auto& nr : *area.cbegin<osmium::OuterRing>()) {
+                sum_lat += nr.lon();
+                sum_lon += nr.lat();
+                ++count;
+            }
+
+            if (count > 0) {
+                _solution.add_building(sum_lat / count, sum_lon / count, get_street_name(tags));
+            } else {
+                // std::cerr << "WARNING: One way consists of 0 nodes." << std::endl;
+            }
         }
 };
 
@@ -195,14 +211,30 @@ int main(int argc, char* argv[]) {
     }
 
     std::cout << "Parsing " << argv[1] << "..." << std::endl;
-    auto start = std::chrono::high_resolution_clock::now();
-    osmium::io::Reader reader(argv[1]);
+    auto start_parsing = std::chrono::high_resolution_clock::now();
+
+    // Create areas out of multipolygons
+    const osmium::io::File input_file{argv[1]};
+    osmium::area::Assembler::config_type assembler_config;
+    assembler_config.create_empty_areas = false;
+
+    osmium::area::MultipolygonManager<osmium::area::Assembler> mp_manager{assembler_config};
+    osmium::relations::read_relations(input_file, mp_manager);
+
+    index_type index;
+    location_handler_type location_handler{index};
+    location_handler.ignore_errors();
+
+    // Actual parsing of constructed areas and nodes
     NaiveSolution solution;
     OSMHandler handler(solution);
-    osmium::apply(reader, handler);
+    osmium::io::Reader reader{input_file, osmium::io::read_meta::no};
+    osmium::apply(reader, location_handler, handler, mp_manager.handler([&handler](const osmium::memory::Buffer& area_buffer) {
+        osmium::apply(area_buffer, handler);
+    }));
     reader.close();
     auto end = std::chrono::high_resolution_clock::now();
-    std::cout << "Parsing done " << get_duration(end - start) << std::endl;
+    std::cout << "Parsing done " << get_duration(end - start_parsing) << std::endl;
     std::cout << "Number of buildings: " << solution.get_buildings().size() << std::endl;
 
     httplib::Server svr;
