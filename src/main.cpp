@@ -202,8 +202,8 @@ class OSMHandler : public osmium::handler::Handler {
 };
 
 int main(int argc, char* argv[]) {
-    if (argc != 2) {
-        std::cerr << "Usage: ./parser <file.osm.pbf>" << std::endl;
+    if (argc < 2) {
+        std::cerr << "Usage: " << argv[0] << " <file.osm.pbf>" << std::endl;
         return 1;
     }
 
