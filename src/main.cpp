@@ -62,6 +62,14 @@ struct Building {
         Building(Point location, std::optional<size_t> street_idx) : location(location), street_idx(street_idx) { }
 };
 
+struct Street {
+    public:
+        std::optional<size_t> name_idx;
+        std::vector<Point> points;
+
+        Street(std::optional<size_t> name_idx, std::vector<Point> points) : name_idx(name_idx), points(points) { }
+};
+
 struct NaiveStringStore {
     private:
         std::vector<std::string> _data;
@@ -84,13 +92,16 @@ class ISolution {
     public:
         virtual ~ISolution() {}
         virtual void add_building(double lat, double lon, const char* street) = 0;
+        virtual void add_street(const char* name, std::vector<Point> points) = 0;
         virtual const std::vector<Building>& get_buildings() const = 0;
+        virtual const std::vector<Street>& get_streets() const = 0;
 };
 
 class NaiveSolution : public ISolution {
     private:
         NaiveStringStore string_store;
         std::vector<Building> buildings;
+        std::vector<Street> streets;
 
     public:
         void add_building(double lat, double lon, const char* street) override {
@@ -104,9 +115,23 @@ class NaiveSolution : public ISolution {
             buildings.emplace_back(location, street_idx);
         }
 
+        void add_street(const char* name, std::vector<Point> points) override {
+            std::optional<size_t> name_idx;
+            if (name) {
+                name_idx = string_store.get_or_add(name);
+            } else {
+                std::cerr << "WARNING: no street name" << std::endl;
+            }
+
+            streets.emplace_back(name_idx, points);
+        }
 
         const std::vector<Building>& get_buildings() const override {
             return buildings;
+        }
+
+        const std::vector<Street>& get_streets() const override {
+            return streets;
         }
 };
 
@@ -117,11 +142,15 @@ class OSMHandler : public osmium::handler::Handler {
     public:
         OSMHandler(ISolution& solution): _solution(solution) { }
 
-        bool is_building(const osmium::TagList& tags) {
+        static bool is_building(const osmium::TagList& tags) {
             return tags["building"];
         }
 
-        const char* get_street_name(const osmium::TagList& tags) {
+        static bool is_street(const osmium::TagList& tags) {
+            return tags["highway"];
+        }
+
+        static const char* get_street_name(const osmium::TagList& tags) {
             // Check for german spelling first
             const char* street = tags["addr:street:de"];
             if (!street) {
@@ -135,6 +164,7 @@ class OSMHandler : public osmium::handler::Handler {
         void node(const osmium::Node& node) {
             const osmium::TagList& tags = node.tags();
 
+            // Nodes are just buildings for now.
             if (!is_building(tags)) return;
 
             if (!node.location()) return;
@@ -147,31 +177,40 @@ class OSMHandler : public osmium::handler::Handler {
         void way(const osmium::Way& way) {
             const osmium::TagList& tags = way.tags();
 
-            if (!is_building(tags)) return;
+            if (is_building(tags)) {
+                if (!way.is_closed()) return;
 
-            if (!way.is_closed()) return;
+                // TODO: const char* housenumber = tags.get_value_by_key("addr:housenumber");
+                
+                // Compute centroid
+                double sum_lat = 0.0, sum_lon = 0.0;
+                size_t count = 0;
+                const auto& nodes = way.nodes();
 
-            // TODO: const char* housenumber = tags.get_value_by_key("addr:housenumber");
-            
-            // Compute centroid
-            double sum_lat = 0.0, sum_lon = 0.0;
-            size_t count = 0;
-            const auto& nodes = way.nodes();
-
-            // Can skip first node since its a closed way
-            for (size_t i = 1; i < nodes.size(); ++i) {
-                const auto& node_ref = nodes[i];
-                if (node_ref.location().valid()) {
-                    sum_lat += node_ref.location().lat();
-                    sum_lon += node_ref.location().lon();
-                    ++count;
+                // Can skip first node since its a closed way
+                for (size_t i = 1; i < nodes.size(); ++i) {
+                    const auto& node_ref = nodes[i];
+                    if (node_ref.location().valid()) {
+                        sum_lat += node_ref.location().lat();
+                        sum_lon += node_ref.location().lon();
+                        ++count;
+                    }
                 }
-            }
 
-            if (count > 0) {
-                _solution.add_building(sum_lat / count, sum_lon / count, get_street_name(tags));
-            } else {
-                // std::cerr << "WARNING: One way consists of 0 nodes." << std::endl;
+                if (count > 0) {
+                    _solution.add_building(sum_lat / count, sum_lon / count, get_street_name(tags));
+                } else {
+                    // std::cerr << "WARNING: One way consists of 0 nodes." << std::endl;
+                }
+            } else if (is_street(tags)) {
+                std::vector<Point> points;
+                for (const auto& node_ref : way.nodes()) {
+                    if (node_ref.location().valid()) {
+                        points.emplace_back(node_ref.location().lat(), node_ref.location().lon());
+                    }
+                }
+
+                _solution.add_street(get_street_name(tags), std::move(points));
             }
         }
 
@@ -233,6 +272,7 @@ int main(int argc, char* argv[]) {
     auto end = std::chrono::high_resolution_clock::now();
     std::cout << "Parsing done " << get_duration(end - start_parsing) << std::endl;
     std::cout << "Number of buildings: " << solution.get_buildings().size() << std::endl;
+    std::cout << "Number of streets: " << solution.get_streets().size() << std::endl;
 
     httplib::Server svr;
     svr.set_mount_point("/", "./www");
