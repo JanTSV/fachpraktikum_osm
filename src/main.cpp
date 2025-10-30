@@ -4,6 +4,7 @@
 #include <chrono>
 #include <iomanip>
 #include <optional>
+#include <osmium/osm/tag.hpp>
 #include <string>
 #include <vector>
 
@@ -17,6 +18,7 @@
 #include <osmium/handler/node_locations_for_ways.hpp>
 
 #include "httplib.h"
+#include "clipp.h"
 
 static const int PORT = 8080;
 using index_type = osmium::index::map::FlexMem<osmium::unsigned_object_id_type, osmium::Location>;
@@ -120,7 +122,7 @@ class NaiveSolution : public ISolution {
             if (name) {
                 name_idx = string_store.get_or_add(name);
             } else {
-                std::cerr << "WARNING: no street name" << std::endl;
+                // std::cerr << "WARNING: no street name" << std::endl;
             }
 
             streets.emplace_back(name_idx, points);
@@ -156,6 +158,17 @@ class OSMHandler : public osmium::handler::Handler {
             if (!street) {
                 // Get native spelling otherwise
                 street = tags["addr:street"];
+            }
+
+            return street;
+        }
+
+        static const char* get_name(const osmium::TagList& tags) {
+            // Check for german spelling first
+            const char* street = tags["name:de"];
+            if (!street) {
+                // Get native spelling otherwise
+                street = tags["name"];
             }
 
             return street;
@@ -210,7 +223,7 @@ class OSMHandler : public osmium::handler::Handler {
                     }
                 }
 
-                _solution.add_street(get_street_name(tags), std::move(points));
+                _solution.add_street(get_name(tags), std::move(points));
             }
         }
 
@@ -240,9 +253,31 @@ class OSMHandler : public osmium::handler::Handler {
         }
 };
 
+struct Configuration {
+    public:
+        osmium::io::File input_file;
+        std::optional<std::string> in_binary_file;
+        std::optional<std::string> out_binary_file;
+
+};
+
 int main(int argc, char* argv[]) {
-    if (argc < 2) {
-        std::cerr << "Usage: " << argv[0] << " <file.osm.pbf>" << std::endl;
+    Configuration configuration;
+
+    // Command line parsing
+    auto cli = clipp::group(
+        clipp::value("input file", [&configuration](const std::string& path) {
+            configuration.input_file = osmium::io::File(path);
+            return true;
+        }).doc("Path to OSM file"),
+
+        clipp::option("-bi", "--binary_in").call([&configuration](const std::string& s){
+            configuration.in_binary_file = s;
+        }).doc("Optional input binary file")
+    );
+
+    if (!clipp::parse(argc, argv, cli)) {
+        std::cout << clipp::make_man_page(cli, argv[0]);
         return 1;
     }
 
@@ -250,12 +285,11 @@ int main(int argc, char* argv[]) {
     auto start_parsing = std::chrono::high_resolution_clock::now();
 
     // Create areas out of multipolygons
-    const osmium::io::File input_file{argv[1]};
     osmium::area::Assembler::config_type assembler_config;
     assembler_config.create_empty_areas = false;
 
     osmium::area::MultipolygonManager<osmium::area::Assembler> mp_manager{assembler_config};
-    osmium::relations::read_relations(input_file, mp_manager);
+    osmium::relations::read_relations(configuration.input_file, mp_manager);
 
     index_type index;
     location_handler_type location_handler{index};
@@ -264,7 +298,7 @@ int main(int argc, char* argv[]) {
     // Actual parsing of constructed areas and nodes
     NaiveSolution solution;
     OSMHandler handler(solution);
-    osmium::io::Reader reader{input_file, osmium::io::read_meta::no};
+    osmium::io::Reader reader{configuration.input_file, osmium::io::read_meta::no};
     osmium::apply(reader, location_handler, handler, mp_manager.handler([&handler](const osmium::memory::Buffer& area_buffer) {
         osmium::apply(area_buffer, handler);
     }));
