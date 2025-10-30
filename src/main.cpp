@@ -256,7 +256,7 @@ class OSMHandler : public osmium::handler::Handler {
 struct Configuration {
     public:
         osmium::io::File input_file;
-        std::optional<std::string> in_binary_file;
+        bool in_binary_file = false;
         std::optional<std::string> out_binary_file;
 
 };
@@ -271,9 +271,12 @@ int main(int argc, char* argv[]) {
             return true;
         }).doc("Path to OSM file"),
 
-        clipp::option("-bi", "--binary_in").call([&configuration](const std::string& s){
-            configuration.in_binary_file = s;
-        }).doc("Optional input binary file")
+        clipp::option("-bi", "--binary_in").set(configuration.in_binary_file).doc("Input file is in binary format"),
+        
+
+        clipp::option("-bo", "--binary_out").call([&configuration](const std::string& s) {
+            configuration.out_binary_file = s;
+        }).doc("Optional output binary file")
     );
 
     if (!clipp::parse(argc, argv, cli)) {

@@ -22,3 +22,6 @@ osm_release
 
 # OSM files
 *.osm.pbf
+
+# bin import / export files
+*.bin
