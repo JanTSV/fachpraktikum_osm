@@ -1,5 +1,6 @@
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <iostream>
 #include <chrono>
 #include <iomanip>
@@ -55,7 +56,7 @@ struct Point {
     public:
         double x;  // lat
         double y;  // lon
-        
+
         Point() : x(0), y(0) {}
         Point(double x, double y) : x(x), y(y) { }
 
@@ -95,7 +96,7 @@ struct Street {
         size_t name_idx;
         std::vector<Point> points;
         
-        Street() : name_idx(0), points() {}
+        Street() : name_idx(0), points() { }
         Street(size_t name_idx, std::vector<Point> points) : name_idx(name_idx), points(points) { }
     
     private:
@@ -104,6 +105,25 @@ struct Street {
         void serialize(Archive& ar, const unsigned int /*version*/) {
             ar & name_idx;
             ar & points;
+        }
+};
+
+struct AdminArea {
+    public:
+        size_t name_idx;
+        std::vector<Point> boundary;
+        uint8_t level;
+
+        AdminArea() : name_idx(0), boundary(), level(0) { }
+        AdminArea(size_t name_idx, std::vector<Point> boundary, uint8_t level) : name_idx(name_idx), boundary(boundary), level(level) { }
+
+    private:
+        friend class boost::serialization::access;
+        template<class Archive>
+        void serialize(Archive& ar, const unsigned int /*version*/) {
+            ar & name_idx;
+            ar & boundary;
+            ar & level;
         }
 };
 
@@ -136,8 +156,10 @@ class ISolution {
         virtual ~ISolution() {}
         virtual void add_building(double lat, double lon, const char* street) = 0;
         virtual void add_street(const char* name, std::vector<Point> points) = 0;
+        virtual void add_admin_area(const char* name, std::vector<Point> boundary, uint8_t level) = 0;
         virtual const std::vector<Building>& get_buildings() const = 0;
         virtual const std::vector<Street>& get_streets() const = 0;
+        virtual const std::vector<AdminArea>& get_admin_areas() const = 0;
         virtual void serialize(const std::string& path) const = 0;
 };
 
@@ -159,12 +181,21 @@ class NaiveSolution : public ISolution {
             _streets.emplace_back(_string_store.get_or_add(name), points);
         }
 
+        void add_admin_area(const char* name, std::vector<Point> boundary, uint8_t level) override {
+            if (!name) return;
+            _admin_areas.emplace_back(_string_store.get_or_add(name), boundary, level);
+        }
+
         const std::vector<Building>& get_buildings() const override {
             return _buildings;
         }
 
         const std::vector<Street>& get_streets() const override {
             return _streets;
+        }
+
+        const std::vector<AdminArea>& get_admin_areas() const override {
+            return _admin_areas;
         }
 
         void serialize(const std::string& path) const override {
@@ -177,6 +208,7 @@ class NaiveSolution : public ISolution {
         NaiveStringStore _string_store;
         std::vector<Building> _buildings;
         std::vector<Street> _streets;
+        std::vector<AdminArea> _admin_areas;
 
         friend class boost::serialization::access;
         template<class Archive>
@@ -184,6 +216,7 @@ class NaiveSolution : public ISolution {
             ar & _string_store;
             ar & _buildings;
             ar & _streets;
+            ar & _admin_areas;
         }
 };
 
@@ -200,6 +233,10 @@ class OSMHandler : public osmium::handler::Handler {
 
         static bool is_street(const osmium::TagList& tags) {
             return tags["highway"];
+        }
+
+        static bool is_admin_area(const osmium::TagList& tags) {
+            return tags["boundary"] && std::string(tags["boundary"]) == "administrative";
         }
 
         static const char* get_street_name(const osmium::TagList& tags) {
@@ -278,31 +315,71 @@ class OSMHandler : public osmium::handler::Handler {
                 }
 
                 _solution.add_street(name, std::move(points));
+            } else if (is_admin_area(tags)) {
+                // AdminAreas have to have a name
+                const char* name = get_name(tags);
+                if (!name) return;
+
+                uint8_t level = 0;
+                if (tags["admin_level"]) {
+                    level = std::stoi(tags["admin_level"]);
+                }
+
+                std::vector<Point> points;
+                for (const auto& node_ref : way.nodes()) {
+                    if (node_ref.location().valid()) {
+                        points.emplace_back(node_ref.location().lat(), node_ref.location().lon());
+                    }
+                }
+
+                if (!points.empty()) {
+                    _solution.add_admin_area(name, std::move(points), level);
+                }
             }
         }
 
         void area(const osmium::Area& area) {
             const osmium::TagList& tags = area.tags();
 
-            if (!is_building(tags)) return;
+            if (is_building(tags)) {
+                // TODO: const char* housenumber = tags.get_value_by_key("addr:housenumber");
 
-            // TODO: const char* housenumber = tags.get_value_by_key("addr:housenumber");
-
-            // Compute centroid
-            double sum_lat = 0.0, sum_lon = 0.0;
-            size_t count = 0;
-            for (const auto& nr : *area.cbegin<osmium::OuterRing>()) {
-                if (nr.location().valid()) {
-                    sum_lat += nr.lon();
-                    sum_lon += nr.lat();
-                    ++count;
+                // Compute centroid
+                double sum_lat = 0.0, sum_lon = 0.0;
+                size_t count = 0;
+                for (const auto& nr : *area.cbegin<osmium::OuterRing>()) {
+                    if (nr.location().valid()) {
+                        sum_lat += nr.lon();
+                        sum_lon += nr.lat();
+                        ++count;
+                    }
                 }
-            }
 
-            if (count > 0) {
-                _solution.add_building(sum_lat / count, sum_lon / count, get_street_name(tags));
-            } else {
-                // std::cerr << "WARNING: One way consists of 0 nodes." << std::endl;
+                if (count > 0) {
+                    _solution.add_building(sum_lat / count, sum_lon / count, get_street_name(tags));
+                } else {
+                    // std::cerr << "WARNING: One way consists of 0 nodes." << std::endl;
+                }
+            } else if (is_admin_area(tags)) {
+                // AdminAreas have to have a name
+                const char* name = get_name(tags);
+                if (!name) return;
+
+                uint8_t level = 0;
+                if (tags["admin_level"]) {
+                    level = std::stoi(tags["admin_level"]);
+                }
+
+                std::vector<Point> points;
+                for (const auto& nr : *area.cbegin<osmium::OuterRing>()) {
+                    if (nr.location().valid()) {
+                        points.emplace_back(nr.location().lat(), nr.location().lon());
+                    }
+                }
+
+                if (!points.empty()) {
+                    _solution.add_admin_area(name, std::move(points), level);
+                }
             }
         }
 };
@@ -388,6 +465,7 @@ int main(int argc, char* argv[]) {
    
     std::cout << "Number of buildings: " << solution.get_buildings().size() << std::endl;
     std::cout << "Number of streets: " << solution.get_streets().size() << std::endl;
+    std::cout << "Number of admin areas: " << solution.get_admin_areas().size() << std::endl;
 
     // Serialize solution if argument is set
     if (configuration.out_binary_file) {
