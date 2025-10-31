@@ -66,10 +66,10 @@ struct Building {
 
 struct Street {
     public:
-        std::optional<size_t> name_idx;
+        size_t name_idx;
         std::vector<Point> points;
 
-        Street(std::optional<size_t> name_idx, std::vector<Point> points) : name_idx(name_idx), points(points) { }
+        Street(size_t name_idx, std::vector<Point> points) : name_idx(name_idx), points(points) { }
 };
 
 struct NaiveStringStore {
@@ -118,14 +118,8 @@ class NaiveSolution : public ISolution {
         }
 
         void add_street(const char* name, std::vector<Point> points) override {
-            std::optional<size_t> name_idx;
-            if (name) {
-                name_idx = string_store.get_or_add(name);
-            } else {
-                // std::cerr << "WARNING: no street name" << std::endl;
-            }
-
-            streets.emplace_back(name_idx, points);
+            if (!name) return;
+            streets.emplace_back(string_store.get_or_add(name), points);
         }
 
         const std::vector<Building>& get_buildings() const override {
@@ -216,6 +210,10 @@ class OSMHandler : public osmium::handler::Handler {
                     // std::cerr << "WARNING: One way consists of 0 nodes." << std::endl;
                 }
             } else if (is_street(tags)) {
+                // Streets have to have a name
+                const char* name = get_name(tags);
+                if (!name) return;
+
                 std::vector<Point> points;
                 for (const auto& node_ref : way.nodes()) {
                     if (node_ref.location().valid()) {
@@ -223,7 +221,7 @@ class OSMHandler : public osmium::handler::Handler {
                     }
                 }
 
-                _solution.add_street(get_name(tags), std::move(points));
+                _solution.add_street(name, std::move(points));
             }
         }
 
