@@ -1,7 +1,7 @@
 CXX = g++
 CXXFLAGS_DEBUG = -Wall -Wextra -std=c++17 -Iinclude -g
 CXXFLAGS_RELEASE = -Wall -Wextra -std=c++17 -Iinclude -O3 -DNDEBUG
-LIBS = -lz -lbz2 -lexpat
+LIBS = -lz -lbz2 -lexpat -lboost_serialization
 
 SRC_DIR = src
 SRC = $(wildcard $(SRC_DIR)/*.cpp)

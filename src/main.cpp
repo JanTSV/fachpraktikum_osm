@@ -7,6 +7,7 @@
 #include <osmium/osm/tag.hpp>
 #include <string>
 #include <vector>
+#include <fstream>
 
 #include <osmium/io/any_input.hpp>
 #include <osmium/handler.hpp>
@@ -16,6 +17,12 @@
 #include <osmium/area/multipolygon_manager.hpp>
 #include <osmium/index/map/flex_mem.hpp>
 #include <osmium/handler/node_locations_for_ways.hpp>
+#include <boost/archive/binary_oarchive.hpp>
+#include <boost/archive/binary_iarchive.hpp>
+#include <boost/serialization/vector.hpp>
+#include <boost/serialization/optional.hpp>
+#include <boost/serialization/string.hpp>
+#include <boost/serialization/access.hpp>
 
 #include "httplib.h"
 #include "clipp.h"
@@ -33,11 +40,11 @@ std::string get_duration(const Duration& duration) {
 
     out << "[";
     if (us < 1000) {
-        out << us << " µs";
+        out << us << "µs";
     } else if (us < 1000000) {
-        out << us / 1000.0 << " ms";
+        out << us / 1000.0 << "ms";
     } else {
-        out << us / 1000000.0 << " s";
+        out << us / 1000000.0 << "s";
     }
     out << "]";
 
@@ -53,6 +60,14 @@ struct Point {
         double euclidean_distance(Point& other) {
             return std::sqrt(std::pow(x - other.x, 2) + std::pow(y - other.y, 2));
         }
+
+    private:
+        friend class boost::serialization::access;
+        template<class Archive>
+        void serialize(Archive& ar, const unsigned int /*version*/) {
+            ar & x;
+            ar & y;
+        }
 };
 
 struct Building {
@@ -62,6 +77,14 @@ struct Building {
         // TODO: house number
 
         Building(Point location, std::optional<size_t> street_idx) : location(location), street_idx(street_idx) { }
+
+    private:
+        friend class boost::serialization::access;
+        template<class Archive>
+        void serialize(Archive& ar, const unsigned int /*version*/) {
+            ar & location;
+            ar & street_idx;
+        }
 };
 
 struct Street {
@@ -70,12 +93,18 @@ struct Street {
         std::vector<Point> points;
 
         Street(size_t name_idx, std::vector<Point> points) : name_idx(name_idx), points(points) { }
+
+    
+    private:
+        friend class boost::serialization::access;
+        template<class Archive>
+        void serialize(Archive& ar, const unsigned int /*version*/) {
+            ar & name_idx;
+            ar & points;
+        }
 };
 
 struct NaiveStringStore {
-    private:
-        std::vector<std::string> _data;
-
     public:
         size_t get_or_add(std::string value) {
             // Very naive string search in O(m*n)
@@ -88,6 +117,15 @@ struct NaiveStringStore {
             _data.push_back(value);
             return _data.size() - 1;
         }
+
+    private:
+        std::vector<std::string> _data;
+
+        friend class boost::serialization::access;
+        template<class Archive>
+        void serialize(Archive& ar, const unsigned int /*version*/) {
+            ar & _data;
+        }
 };
 
 class ISolution {
@@ -97,37 +135,52 @@ class ISolution {
         virtual void add_street(const char* name, std::vector<Point> points) = 0;
         virtual const std::vector<Building>& get_buildings() const = 0;
         virtual const std::vector<Street>& get_streets() const = 0;
+        virtual void serialize(const std::string& path) const = 0;
 };
 
 class NaiveSolution : public ISolution {
-    private:
-        NaiveStringStore string_store;
-        std::vector<Building> buildings;
-        std::vector<Street> streets;
-
     public:
         void add_building(double lat, double lon, const char* street) override {
             // Store street name, it building has one tagged
             std::optional<size_t> street_idx;
             if (street) {
-                street_idx = string_store.get_or_add(street);
+                street_idx = _string_store.get_or_add(street);
             }
             // Construct building and add to vector
             Point location{lat, lon};
-            buildings.emplace_back(location, street_idx);
+            _buildings.emplace_back(location, street_idx);
         }
 
         void add_street(const char* name, std::vector<Point> points) override {
             if (!name) return;
-            streets.emplace_back(string_store.get_or_add(name), points);
+            _streets.emplace_back(_string_store.get_or_add(name), points);
         }
 
         const std::vector<Building>& get_buildings() const override {
-            return buildings;
+            return _buildings;
         }
 
         const std::vector<Street>& get_streets() const override {
-            return streets;
+            return _streets;
+        }
+
+        void serialize(const std::string& path) const override {
+            std::ofstream ofs(path, std::ios::binary);
+            boost::archive::binary_oarchive oa(ofs);
+            oa << *this;
+        }
+
+    private:
+        NaiveStringStore _string_store;
+        std::vector<Building> _buildings;
+        std::vector<Street> _streets;
+
+        friend class boost::serialization::access;
+        template<class Archive>
+        void serialize(Archive& ar, const unsigned int /*version*/) {
+            ar & _string_store;
+            ar & _buildings;
+            ar & _streets;
         }
 };
 
@@ -255,6 +308,7 @@ struct Configuration {
     public:
         osmium::io::File input_file;
         bool in_binary_file = false;
+        bool help = false;
         std::optional<std::string> out_binary_file;
 
 };
@@ -263,26 +317,31 @@ int main(int argc, char* argv[]) {
     Configuration configuration;
 
     // Command line parsing
-    auto cli = clipp::group(
+    auto cli = (
+        clipp::option("-h", "--help").set(configuration.help).doc("Print this help"),
+
+        clipp::option("-bi", "--binary_in")
+            .set(configuration.in_binary_file)
+            .doc("Input file is in binary format"),
+
+        (clipp::option("-bo", "--binary_out") &
+        clipp::value("output file", [&configuration](const std::string& path) {
+                configuration.out_binary_file = path;
+                return true;
+            })).doc("Optional path to output binary file"),
+
         clipp::value("input file", [&configuration](const std::string& path) {
             configuration.input_file = osmium::io::File(path);
             return true;
-        }).doc("Path to OSM file"),
-
-        clipp::option("-bi", "--binary_in").set(configuration.in_binary_file).doc("Input file is in binary format"),
-        
-
-        clipp::option("-bo", "--binary_out").call([&configuration](const std::string& s) {
-            configuration.out_binary_file = s;
-        }).doc("Optional output binary file")
+        }).doc("Path to OSM file")
     );
 
-    if (!clipp::parse(argc, argv, cli)) {
+    if (!clipp::parse(argc, argv, cli, true) || configuration.help) {
         std::cout << clipp::make_man_page(cli, argv[0]);
         return 1;
     }
 
-    std::cout << "Parsing " << argv[1] << "..." << std::endl;
+    std::cout << "Parsing " << configuration.input_file.filename() << "..." << std::endl;
     auto start_parsing = std::chrono::high_resolution_clock::now();
 
     // Create areas out of multipolygons
@@ -308,6 +367,17 @@ int main(int argc, char* argv[]) {
     std::cout << "Parsing done " << get_duration(end - start_parsing) << std::endl;
     std::cout << "Number of buildings: " << solution.get_buildings().size() << std::endl;
     std::cout << "Number of streets: " << solution.get_streets().size() << std::endl;
+
+    // Serialize solution if argument is set
+    if (configuration.out_binary_file) {
+        std::cout << "Serializing to " << *configuration.out_binary_file << "..." << std::endl;
+        auto start_ser = std::chrono::high_resolution_clock::now();
+
+        solution.serialize(*configuration.out_binary_file);
+
+        auto end_ser = std::chrono::high_resolution_clock::now();
+        std::cout << "Serialization done " << get_duration(end_ser - start_ser) << std::endl;
+    }
 
     httplib::Server svr;
     svr.set_mount_point("/", "./www");
