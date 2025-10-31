@@ -55,6 +55,8 @@ struct Point {
     public:
         double x;  // lat
         double y;  // lon
+        
+        Point() : x(0), y(0) {}
         Point(double x, double y) : x(x), y(y) { }
 
         double euclidean_distance(Point& other) {
@@ -76,6 +78,7 @@ struct Building {
         std::optional<size_t> street_idx;
         // TODO: house number
 
+        Building() : location(), street_idx(std::nullopt) { }
         Building(Point location, std::optional<size_t> street_idx) : location(location), street_idx(street_idx) { }
 
     private:
@@ -91,9 +94,9 @@ struct Street {
     public:
         size_t name_idx;
         std::vector<Point> points;
-
+        
+        Street() : name_idx(0), points() {}
         Street(size_t name_idx, std::vector<Point> points) : name_idx(name_idx), points(points) { }
-
     
     private:
         friend class boost::serialization::access;
@@ -341,30 +344,48 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    std::cout << "Parsing " << configuration.input_file.filename() << "..." << std::endl;
-    auto start_parsing = std::chrono::high_resolution_clock::now();
-
-    // Create areas out of multipolygons
-    osmium::area::Assembler::config_type assembler_config;
-    assembler_config.create_empty_areas = false;
-
-    osmium::area::MultipolygonManager<osmium::area::Assembler> mp_manager{assembler_config};
-    osmium::relations::read_relations(configuration.input_file, mp_manager);
-
-    index_type index;
-    location_handler_type location_handler{index};
-    location_handler.ignore_errors();
-
-    // Actual parsing of constructed areas and nodes
     NaiveSolution solution;
-    OSMHandler handler(solution);
-    osmium::io::Reader reader{configuration.input_file, osmium::io::read_meta::no};
-    osmium::apply(reader, location_handler, handler, mp_manager.handler([&handler](const osmium::memory::Buffer& area_buffer) {
-        osmium::apply(area_buffer, handler);
-    }));
-    reader.close();
-    auto end = std::chrono::high_resolution_clock::now();
-    std::cout << "Parsing done " << get_duration(end - start_parsing) << std::endl;
+    if (configuration.in_binary_file) {
+        std::cout << "Loading binary data from " << configuration.input_file.filename() << "..." << std::endl;
+        auto start_load = std::chrono::high_resolution_clock::now();
+
+        std::ifstream ifs(configuration.input_file.filename(), std::ios::binary);
+        if (!ifs.is_open()) {
+            std::cerr << "Error: Cannot open binary file " << configuration.input_file.filename() << std::endl;
+            return 1;
+        }
+
+        boost::archive::binary_iarchive ia(ifs);
+        ia >> solution;
+
+        auto end_load = std::chrono::high_resolution_clock::now();
+        std::cout << "Loaded binary data " << get_duration(end_load - start_load) << std::endl;
+    } else {
+        std::cout << "Parsing " << configuration.input_file.filename() << "..." << std::endl;
+        auto start_parsing = std::chrono::high_resolution_clock::now();
+
+        // Create areas out of multipolygons
+        osmium::area::Assembler::config_type assembler_config;
+        assembler_config.create_empty_areas = false;
+
+        osmium::area::MultipolygonManager<osmium::area::Assembler> mp_manager{assembler_config};
+        osmium::relations::read_relations(configuration.input_file, mp_manager);
+
+        index_type index;
+        location_handler_type location_handler{index};
+        location_handler.ignore_errors();
+
+        // Actual parsing of constructed areas and nodes
+        OSMHandler handler(solution);
+        osmium::io::Reader reader{configuration.input_file, osmium::io::read_meta::no};
+        osmium::apply(reader, location_handler, handler, mp_manager.handler([&handler](const osmium::memory::Buffer& area_buffer) {
+            osmium::apply(area_buffer, handler);
+        }));
+        reader.close();
+        auto end = std::chrono::high_resolution_clock::now();
+        std::cout << "Parsing done " << get_duration(end - start_parsing) << std::endl;
+    }
+   
     std::cout << "Number of buildings: " << solution.get_buildings().size() << std::endl;
     std::cout << "Number of streets: " << solution.get_streets().size() << std::endl;
 
