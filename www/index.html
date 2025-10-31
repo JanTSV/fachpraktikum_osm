@@ -13,7 +13,8 @@
 
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script>
-    const map = L.map('map');
+    // Open map at Stuttgart
+    const map = L.map('map').setView([48.8318, 9.12009], 16);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors'
@@ -25,9 +26,6 @@
     fetch('/buildings')
     .then(r => r.json())
     .then(points => {
-      // center map on the first building
-      map.setView([points[0][0], points[0][1]], 16);
-
       points.forEach(([lat, lon]) => {
         L.circleMarker([lat, lon], {
           radius: 2,
