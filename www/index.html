@@ -10,28 +10,41 @@
 </head>
 <body>
   <div id="map"></div>
-
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script>
-    // Open map at Stuttgart
     const map = L.map('map').setView([48.8318, 9.12009], 16);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
 
-    // Fetch buildings from server and add to map
     const canvasLayer = L.layerGroup([], { renderer: L.canvas() }).addTo(map);
 
-    fetch('/buildings')
-    .then(r => r.json())
-    .then(points => {
-      points.forEach(([lat, lon]) => {
-        L.circleMarker([lat, lon], {
-          radius: 2,
-          color: 'blue',
-          renderer: canvasLayer.options.renderer
-        }).addTo(canvasLayer);
+    map.on('moveend', () => {
+      const bounds = map.getBounds();
+      const sw = bounds.getSouthWest();
+      const ne = bounds.getNorthEast();
+
+      const payload = {
+        swLat: sw.lat,
+        swLon: sw.lng,
+        neLat: ne.lat,
+        neLon: ne.lng
+      };
+      fetch('/buildings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      .then(r => r.json())
+      .then(points => {
+        points.forEach(([lat, lon]) => {
+          L.circleMarker([lat, lon], {
+            radius: 2,
+            color: 'blue',
+            renderer: canvasLayer.options.renderer
+          }).addTo(canvasLayer);
+        });
       });
     });
   </script>

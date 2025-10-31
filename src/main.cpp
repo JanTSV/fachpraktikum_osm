@@ -481,19 +481,44 @@ int main(int argc, char* argv[]) {
     httplib::Server svr;
     svr.set_mount_point("/", "./www");
 
-    // API endpoint for cities
-    svr.Get("/buildings", [&solution](const httplib::Request&, httplib::Response& res) {
-        const auto& buildings = solution.get_buildings();
-        std::ostringstream json;
+    std::vector<uint64_t> sent_buildings((solution.get_buildings().size() + 63) / 64, 0);
 
+    // API endpoint for buildings
+    svr.Post("/buildings", [&solution, &sent_buildings](const httplib::Request &req, httplib::Response &res) {
+        // Read viewport boundary
+        double swLat, swLon, neLat, neLon;
+        bool ok = (sscanf(
+            req.body.c_str(),
+            R"({"swLat":%lf,"swLon":%lf,"neLat":%lf,"neLon":%lf})",
+            &swLat, &swLon, &neLat, &neLon
+        ) == 4);
+
+        if (!ok) {
+            res.status = 400;
+            res.set_content("Invalid JSON format", "text/plain");
+            return;
+        }
+
+        const auto& buildings = solution.get_buildings();
+
+        std::ostringstream json;
         json << "[";
+        bool first = true;
         for (size_t i = 0; i < buildings.size(); ++i) {
+            if ((sent_buildings[i / 64] & (1 << (i % 64))) != 0) continue;
+            
             const auto& b = buildings[i];
-            json << "[" << b.location.x << "," << b.location.y << "]";
-            if (i + 1 < buildings.size()) json << ",";
+            if (b.location.x >= swLat && b.location.x <= neLat &&
+                b.location.y >= swLon && b.location.y <= neLon) {
+                if (!first) json << ",";
+                json << "[" << b.location.x << "," << b.location.y << "]";
+                sent_buildings[i / 64] |= 1U << (i % 64);
+                first = false;
+            }
         }
         json << "]";
 
+        res.status = 200;
         res.set_content(json.str(), "application/json");
     });
 
