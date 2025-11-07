@@ -5,12 +5,12 @@
 #include <iomanip>
 #include <limits>
 #include <optional>
-#include <osmium/osm/tag.hpp>
 #include <string>
 #include <fstream>
 
 #include <osmium/io/any_input.hpp>
 #include <osmium/osm/area.hpp>
+#include <osmium/osm/tag.hpp>
 #include <osmium/visitor.hpp>
 #include <osmium/area/assembler.hpp>
 #include <osmium/area/multipolygon_manager.hpp>
@@ -30,7 +30,7 @@
 #include "string_store.hpp"
 #include "osm_handler.hpp"
 
-static const int PORT = 8080;
+static const int DEFAULT_PORT = 8080;
 using index_type = osmium::index::map::FlexMem<osmium::unsigned_object_id_type, osmium::Location>;
 using location_handler_type = osmium::handler::NodeLocationsForWays<index_type>;
 
@@ -77,16 +77,43 @@ class NaiveSolution : public ISolution {
             _admin_areas.emplace_back(_string_store.get_or_add(name), boundary, level);
         }
 
-        const std::vector<Building>& get_buildings() const override {
-            return _buildings;
+        size_t num_buildings() const override {
+            return _buildings.size();
         }
 
-        const std::vector<Street>& get_streets() const override {
-            return _streets;
+        size_t num_streets() const override {
+            return _streets.size();
         }
 
-        const std::vector<AdminArea>& get_admin_areas() const override {
-            return _admin_areas;
+        size_t num_admin_areas() const override {
+            return _admin_areas.size();
+        }
+
+        std::string get_buildings_in_view(double sw_lat, double sw_lon, double ne_lat, double ne_lon) override {
+            if (_get_buildings_in_view_first_call) {
+                _sent_buildings.resize((num_buildings() + 63) / 64, 0);
+                _get_buildings_in_view_first_call = false;
+            }
+
+            std::ostringstream json;
+            json << "[";
+            bool first = true;
+
+            for (size_t i = 0; i < _buildings.size(); ++i) {
+                if ((_sent_buildings[i / 64] & (1 << (i % 64))) != 0) continue;
+                
+                const auto& b = _buildings[i];
+                if (b.location.x >= sw_lat && b.location.x <= ne_lat &&
+                    b.location.y >= sw_lon && b.location.y <= ne_lon) {
+                    if (!first) json << ",";
+                    json << "[" << b.location.x << "," << b.location.y << "]";
+                    _sent_buildings[i / 64] |= 1U << (i % 64);
+                    first = false;
+                }
+            }
+            json << "]";
+
+            return json.str();
         }
 
         void serialize(const std::string& path) const override {
@@ -104,7 +131,7 @@ class NaiveSolution : public ISolution {
                 }
             }
 
-            // Housenumber interpolation
+            // Housenumber interpolation (undoable in good time here)
         }
 
     private:
@@ -112,6 +139,8 @@ class NaiveSolution : public ISolution {
         std::vector<Building> _buildings;
         std::vector<Street> _streets;
         std::vector<AdminArea> _admin_areas;
+        std::vector<uint64_t> _sent_buildings;
+        bool _get_buildings_in_view_first_call = true;
 
         friend class boost::serialization::access;
         template<class Archive>
@@ -148,6 +177,7 @@ struct Configuration {
         bool in_binary_file = false;
         bool help = false;
         std::optional<std::string> out_binary_file;
+        int port = DEFAULT_PORT;
 };
 
 int main(int argc, char* argv[]) {
@@ -166,6 +196,8 @@ int main(int argc, char* argv[]) {
                 configuration.out_binary_file = path;
                 return true;
             })).doc("Optional path to output binary file"),
+
+        (clipp::option("-p", "--port") & clipp::value("port", configuration.port)).doc(std::string("Port number for the localhost. DEFAULT = ") + std::to_string(DEFAULT_PORT)),
 
         clipp::value("input file", [&configuration](const std::string& path) {
             configuration.input_file = osmium::io::File(path);
@@ -220,9 +252,9 @@ int main(int argc, char* argv[]) {
         std::cout << "Parsing done " << get_duration(end - start_parsing) << std::endl;
     }
    
-    std::cout << "Number of buildings: " << solution.get_buildings().size() << std::endl;
-    std::cout << "Number of streets: " << solution.get_streets().size() << std::endl;
-    std::cout << "Number of admin areas: " << solution.get_admin_areas().size() << std::endl;
+    std::cout << "Number of buildings: " << solution.num_buildings() << std::endl;
+    std::cout << "Number of streets: " << solution.num_streets() << std::endl;
+    std::cout << "Number of admin areas: " << solution.num_admin_areas() << std::endl;
 
     // Serialize solution if argument is set
     if (configuration.out_binary_file) {
@@ -236,27 +268,25 @@ int main(int argc, char* argv[]) {
     }
 
     // Preprocessing (maybe before serializing)
-    std::cout << "Preprocessing..." << std::endl;
-    auto start_prep = std::chrono::high_resolution_clock::now();
+    // std::cout << "Preprocessing..." << std::endl;
+    // auto start_prep = std::chrono::high_resolution_clock::now();
 
-    solution.preprocess();
+    // solution.preprocess();
 
-    auto end_prep = std::chrono::high_resolution_clock::now();
-    std::cout << "Preprocessing done " << get_duration(end_prep - start_prep) << std::endl;
+    // auto end_prep = std::chrono::high_resolution_clock::now();
+    // std::cout << "Preprocessing done " << get_duration(end_prep - start_prep) << std::endl;
 
     httplib::Server svr;
     svr.set_mount_point("/", "./www");
 
-    std::vector<uint64_t> sent_buildings((solution.get_buildings().size() + 63) / 64, 0);
-
     // API endpoint for buildings
-    svr.Post("/buildings", [&solution, &sent_buildings](const httplib::Request &req, httplib::Response &res) {
+    svr.Post("/buildings", [&solution](const httplib::Request &req, httplib::Response &res) {
         // Read viewport boundary
-        double swLat, swLon, neLat, neLon;
+        double sw_lat, sw_lon, ne_lat, ne_lon;
         bool ok = (sscanf(
             req.body.c_str(),
             R"({"swLat":%lf,"swLon":%lf,"neLat":%lf,"neLon":%lf})",
-            &swLat, &swLon, &neLat, &neLon
+            &sw_lat, &sw_lon, &ne_lat, &ne_lon
         ) == 4);
 
         if (!ok) {
@@ -265,31 +295,12 @@ int main(int argc, char* argv[]) {
             return;
         }
 
-        const auto& buildings = solution.get_buildings();
-
-        std::ostringstream json;
-        json << "[";
-        bool first = true;
-        for (size_t i = 0; i < buildings.size(); ++i) {
-            if ((sent_buildings[i / 64] & (1 << (i % 64))) != 0) continue;
-            
-            const auto& b = buildings[i];
-            if (b.location.x >= swLat && b.location.x <= neLat &&
-                b.location.y >= swLon && b.location.y <= neLon) {
-                if (!first) json << ",";
-                json << "[" << b.location.x << "," << b.location.y << "]";
-                sent_buildings[i / 64] |= 1U << (i % 64);
-                first = false;
-            }
-        }
-        json << "]";
-
         res.status = 200;
-        res.set_content(json.str(), "application/json");
+        res.set_content(solution.get_buildings_in_view(sw_lat, sw_lon, ne_lat, ne_lon), "application/json");
     });
 
-    std::cout << "Server started at http://localhost:" << PORT << std::endl;
-    svr.listen("localhost", PORT);
+    std::cout << "Server started at http://localhost:" << configuration.port << std::endl;
+    svr.listen("localhost", configuration.port);
 
     return 0;
 }

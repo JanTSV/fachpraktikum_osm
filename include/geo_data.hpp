@@ -19,6 +19,9 @@ public:
     Point();
     Point(double x, double y);
 
+    double& operator[](size_t idx);
+    const double& operator[](size_t idx) const;
+
     double euclidean_distance(Point& other);
 
 private:

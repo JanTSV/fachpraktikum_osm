@@ -6,6 +6,18 @@ Point::Point() : x(0), y(0) { }
 
 Point::Point(double x_, double y_) : x(x_), y(y_) { }
 
+double& Point::operator[](size_t idx) {
+    if (idx == 0) return x;
+    else if (idx == 1) return y;
+    else throw std::out_of_range("Point index out of range");
+}
+
+const double& Point::operator[](size_t idx) const {
+    if (idx == 0) return x;
+    else if (idx == 1) return y;
+    else throw std::out_of_range("Point index out of range");
+}
+
 double Point::euclidean_distance(Point& other) {
     return std::sqrt(std::pow(x - other.x, 2) + std::pow(y - other.y, 2));
 }
