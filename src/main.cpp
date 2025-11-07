@@ -22,6 +22,8 @@
 #include <boost/serialization/optional.hpp>
 #include <boost/serialization/string.hpp>
 #include <boost/serialization/access.hpp>
+#include <boost/serialization/unique_ptr.hpp>
+#include <vector>
 
 #include "httplib.h"
 #include "clipp.h"
@@ -57,11 +59,13 @@ std::string get_duration(const Duration& duration) {
 // Here we only have a 2DTree
 class KDTree {
     public:
-        KDTree() : _root(nullptr) { }
+        KDTree() : _root(nullptr), _size(0) { }
 
-        void insert(const Point& point) {
+        void insert(const Point& point, size_t idx) {
+            _size++;
+
             if (!_root) {
-                _root = std::make_unique<Node>(point);
+                _root = std::make_unique<Node>(point, idx);
                 return;
             }
 
@@ -75,14 +79,14 @@ class KDTree {
                     if (current->left) {
                         current = current->left.get();
                     } else {
-                        current->left = std::make_unique<Node>(point);
+                        current->left = std::make_unique<Node>(point, idx);
                         break;
                     }
                 } else {
                     if (current->right) {
                         current = current->right.get();
                     } else {
-                        current->right = std::make_unique<Node>(point);
+                        current->right = std::make_unique<Node>(point, idx);
                         break;
                     }
                 }
@@ -91,26 +95,70 @@ class KDTree {
             }
         }
 
+        size_t size() const {
+            return _size;
+        }
+
     private:
         struct Node {
-            Point point;
-            std::unique_ptr<Node> left;
-            std::unique_ptr<Node> right;
+            public:
+                Point point;
+                size_t idx;
+                std::unique_ptr<Node> left;
+                std::unique_ptr<Node> right;
 
-            Node(const Point point) : point(point), left(nullptr), right(nullptr) { }
+                Node() = default;
+                Node(const Point point, size_t idx) : point(point), idx(idx), left(nullptr), right(nullptr) { }
+
+            private:
+                friend class boost::serialization::access;
+                template<class Archive>
+                void serialize(Archive& ar, const unsigned int /*version*/) {
+                    ar & point;
+                    ar & idx;
+                    ar & left;
+                    ar & right;
+                }
         };
 
         std::unique_ptr<Node> _root;
+        size_t _size;
+
+        friend class boost::serialization::access;
+        template<class Archive>
+        void serialize(Archive& ar, const unsigned int /*version*/) {
+            ar & _root;
+            ar & _size;
+        }
 };
 
 class KDSolution : public ISolution {
     public:
         void add_building(double lat, double lon, const char* street, std::optional<HouseNumber> house_number) override {
+            // Add meta info to _buildings
+            std::optional<size_t> street_idx;
+            if (street) {
+                street_idx = _string_store.get_or_add(street);
+            }
+            _buildings.emplace_back(street_idx, house_number);
 
+            // Add building do 2d tree
+            Point location(lat, lon);
+            _buildings_tree.insert(location, _buildings.size() - 1);
         }
 
         void add_street(const char* name, std::vector<Point> points) override {
+            // Skip streets without names
+            if (!name) return;
 
+            // Add meta info to _streets
+            _streets.emplace_back(_string_store.get_or_add(name));
+            const size_t street_idx = _streets.size() - 1;
+
+            // Add all street points to 2d tree
+            for (auto point : points) {
+                _streets_tree.insert(point, street_idx);
+            }
         }
 
         void add_admin_area(const char* name, std::vector<Point> boundary, uint8_t level) override {
@@ -118,11 +166,11 @@ class KDSolution : public ISolution {
         }
 
         size_t num_buildings() const override {
-            return 0;
+            return _buildings_tree.size();
         }
 
         size_t num_streets() const override {
-            return 0;
+            return _streets_tree.size();
         }
 
         size_t num_admin_areas() const override {
@@ -144,9 +192,39 @@ class KDSolution : public ISolution {
         }
 
     private:
+        struct BuildingData {
+            public:
+                std::optional<size_t> street_idx;
+                std::optional<HouseNumber> house_number;
+
+                BuildingData() = default;
+                BuildingData(std::optional<size_t> street_idx, std::optional<HouseNumber> house_number) : street_idx(street_idx), house_number(house_number) { }
+
+            private:
+                friend class boost::serialization::access;
+                template<class Archive>
+                void serialize(Archive& ar, const unsigned int /*version*/) {
+                    ar & street_idx;
+                    ar & house_number;
+                }
+        };
+
+        MappedStringStore _string_store;
+
+        KDTree _buildings_tree;
+        std::vector<BuildingData> _buildings;
+
+        KDTree _streets_tree;
+        std::vector<size_t> _streets;  // Name idx
+
         friend class boost::serialization::access;
         template<class Archive>
         void serialize(Archive& ar, const unsigned int /*version*/) {
+            ar & _string_store;
+            ar & _buildings_tree;
+            ar & _buildings;
+            ar & _streets_tree;
+            ar & _streets;
         }
 
 };
