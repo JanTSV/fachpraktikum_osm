@@ -4,11 +4,13 @@
 #include <iostream>
 #include <chrono>
 #include <iomanip>
+#include <limits>
 #include <optional>
 #include <osmium/osm/tag.hpp>
 #include <string>
 #include <vector>
 #include <fstream>
+#include <charconv>
 
 #include <osmium/io/any_input.hpp>
 #include <osmium/handler.hpp>
@@ -31,6 +33,7 @@
 static const int PORT = 8080;
 using index_type = osmium::index::map::FlexMem<osmium::unsigned_object_id_type, osmium::Location>;
 using location_handler_type = osmium::handler::NodeLocationsForWays<index_type>;
+using HouseNumber = uint16_t;
 
 template<typename Duration>
 std::string get_duration(const Duration& duration) {
@@ -77,10 +80,11 @@ struct Building {
     public:
         Point location;
         std::optional<size_t> street_idx;
+        std::optional<HouseNumber> house_number;
         // TODO: house number
 
-        Building() : location(), street_idx(std::nullopt) { }
-        Building(Point location, std::optional<size_t> street_idx) : location(location), street_idx(street_idx) { }
+        Building() : location(), street_idx(std::nullopt), house_number(std::nullopt) { }
+        Building(Point location, std::optional<size_t> street_idx, std::optional<HouseNumber> house_number) : location(location), street_idx(street_idx), house_number(house_number) { }
 
     private:
         friend class boost::serialization::access;
@@ -88,6 +92,7 @@ struct Building {
         void serialize(Archive& ar, const unsigned int /*version*/) {
             ar & location;
             ar & street_idx;
+            ar & house_number;
         }
 };
 
@@ -154,7 +159,7 @@ struct NaiveStringStore {
 class ISolution {
     public:
         virtual ~ISolution() {}
-        virtual void add_building(double lat, double lon, const char* street) = 0;
+        virtual void add_building(double lat, double lon, const char* street, std::optional<HouseNumber> house_number) = 0;
         virtual void add_street(const char* name, std::vector<Point> points) = 0;
         virtual void add_admin_area(const char* name, std::vector<Point> boundary, uint8_t level) = 0;
         virtual const std::vector<Building>& get_buildings() const = 0;
@@ -165,7 +170,7 @@ class ISolution {
 
 class NaiveSolution : public ISolution {
     public:
-        void add_building(double lat, double lon, const char* street) override {
+        void add_building(double lat, double lon, const char* street, std::optional<HouseNumber> house_number) override {
             // Store street name, it building has one tagged
             std::optional<size_t> street_idx;
             if (street) {
@@ -173,7 +178,7 @@ class NaiveSolution : public ISolution {
             }
             // Construct building and add to vector
             Point location{lat, lon};
-            _buildings.emplace_back(location, street_idx);
+            _buildings.emplace_back(location, street_idx, house_number);
         }
 
         void add_street(const char* name, std::vector<Point> points) override {
@@ -261,6 +266,30 @@ class OSMHandler : public osmium::handler::Handler {
             return street;
         }
 
+
+        static std::optional<HouseNumber> get_house_number(const osmium::TagList& tags) {
+            std::optional<HouseNumber> house_number;
+
+            const char* house_number_str = tags.get_value_by_key("addr:housenumber");
+            if (house_number_str) {
+                // std::cout << "House number: " << house_number_str << std::endl;
+                uint16_t n = 0;
+                auto [ptr, ec] = std::from_chars(
+                    house_number_str,
+                    house_number_str + std::strlen(house_number_str),
+                    n
+                );
+
+                if (ec == std::errc()) {
+                    house_number = n;
+                } else {
+                    // std::cerr << "WARNING: invalid or out-of-range house number: " << house_number_str << std::endl;
+                }
+            }
+
+            return house_number;
+        }
+
         void node(const osmium::Node& node) {
             const osmium::TagList& tags = node.tags();
 
@@ -269,9 +298,7 @@ class OSMHandler : public osmium::handler::Handler {
 
             if (!node.location()) return;
 
-            // TODO: const char* housenumber = tags.get_value_by_key("addr:housenumber");
-
-            _solution.add_building(node.location().lat(), node.location().lon(), get_street_name(tags));
+            _solution.add_building(node.location().lat(), node.location().lon(), get_street_name(tags), get_house_number(tags));
         }
 
         void way(const osmium::Way& way) {
@@ -298,7 +325,7 @@ class OSMHandler : public osmium::handler::Handler {
                 }
 
                 if (count > 0) {
-                    _solution.add_building(sum_lat / count, sum_lon / count, get_street_name(tags));
+                    _solution.add_building(sum_lat / count, sum_lon / count, get_street_name(tags), get_house_number(tags));
                 } else {
                     // std::cerr << "WARNING: One way consists of 0 nodes." << std::endl;
                 }
@@ -342,8 +369,6 @@ class OSMHandler : public osmium::handler::Handler {
             const osmium::TagList& tags = area.tags();
 
             if (is_building(tags)) {
-                // TODO: const char* housenumber = tags.get_value_by_key("addr:housenumber");
-
                 // Compute centroid
                 double sum_lat = 0.0, sum_lon = 0.0;
                 size_t count = 0;
@@ -356,7 +381,7 @@ class OSMHandler : public osmium::handler::Handler {
                 }
 
                 if (count > 0) {
-                    _solution.add_building(sum_lat / count, sum_lon / count, get_street_name(tags));
+                    _solution.add_building(sum_lat / count, sum_lon / count, get_street_name(tags), get_house_number(tags));
                 } else {
                     // std::cerr << "WARNING: One way consists of 0 nodes." << std::endl;
                 }
