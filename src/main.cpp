@@ -1,4 +1,4 @@
-#include <cmath>
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
@@ -29,11 +29,11 @@
 
 #include "httplib.h"
 #include "clipp.h"
+#include "geo_data.hpp"
 
 static const int PORT = 8080;
 using index_type = osmium::index::map::FlexMem<osmium::unsigned_object_id_type, osmium::Location>;
 using location_handler_type = osmium::handler::NodeLocationsForWays<index_type>;
-using HouseNumber = uint16_t;
 
 template<typename Duration>
 std::string get_duration(const Duration& duration) {
@@ -55,82 +55,6 @@ std::string get_duration(const Duration& duration) {
     return out.str();
 }
 
-struct Point {
-    public:
-        double x;  // lat
-        double y;  // lon
-
-        Point() : x(0), y(0) {}
-        Point(double x, double y) : x(x), y(y) { }
-
-        double euclidean_distance(Point& other) {
-            return std::sqrt(std::pow(x - other.x, 2) + std::pow(y - other.y, 2));
-        }
-
-    private:
-        friend class boost::serialization::access;
-        template<class Archive>
-        void serialize(Archive& ar, const unsigned int /*version*/) {
-            ar & x;
-            ar & y;
-        }
-};
-
-struct Building {
-    public:
-        Point location;
-        std::optional<size_t> street_idx;
-        std::optional<HouseNumber> house_number;
-        // TODO: house number
-
-        Building() : location(), street_idx(std::nullopt), house_number(std::nullopt) { }
-        Building(Point location, std::optional<size_t> street_idx, std::optional<HouseNumber> house_number) : location(location), street_idx(street_idx), house_number(house_number) { }
-
-    private:
-        friend class boost::serialization::access;
-        template<class Archive>
-        void serialize(Archive& ar, const unsigned int /*version*/) {
-            ar & location;
-            ar & street_idx;
-            ar & house_number;
-        }
-};
-
-struct Street {
-    public:
-        size_t name_idx;
-        std::vector<Point> points;
-        
-        Street() : name_idx(0), points() { }
-        Street(size_t name_idx, std::vector<Point> points) : name_idx(name_idx), points(points) { }
-    
-    private:
-        friend class boost::serialization::access;
-        template<class Archive>
-        void serialize(Archive& ar, const unsigned int /*version*/) {
-            ar & name_idx;
-            ar & points;
-        }
-};
-
-struct AdminArea {
-    public:
-        size_t name_idx;
-        std::vector<Point> boundary;
-        uint8_t level;
-
-        AdminArea() : name_idx(0), boundary(), level(0) { }
-        AdminArea(size_t name_idx, std::vector<Point> boundary, uint8_t level) : name_idx(name_idx), boundary(boundary), level(level) { }
-
-    private:
-        friend class boost::serialization::access;
-        template<class Archive>
-        void serialize(Archive& ar, const unsigned int /*version*/) {
-            ar & name_idx;
-            ar & boundary;
-            ar & level;
-        }
-};
 
 struct NaiveStringStore {
     public:
@@ -166,6 +90,7 @@ class ISolution {
         virtual const std::vector<Street>& get_streets() const = 0;
         virtual const std::vector<AdminArea>& get_admin_areas() const = 0;
         virtual void serialize(const std::string& path) const = 0;
+        virtual void preprocess() = 0;
 };
 
 class NaiveSolution : public ISolution {
@@ -209,6 +134,17 @@ class NaiveSolution : public ISolution {
             oa << *this;
         }
 
+        void preprocess() override {
+            // Find streets of buildings
+            for (auto& building : _buildings) {
+                if (!building.street_idx) {
+                    Street& nearest_street = find_nearest_street(building);
+                }
+            }
+
+            // Housenumber interpolation
+        }
+
     private:
         NaiveStringStore _string_store;
         std::vector<Building> _buildings;
@@ -222,6 +158,25 @@ class NaiveSolution : public ISolution {
             ar & _buildings;
             ar & _streets;
             ar & _admin_areas;
+        }
+
+        Street& find_nearest_street(Building& building) {
+            Street& nearest = _streets[0];
+            double min_dist = std::numeric_limits<double>::max();
+
+            for (auto& street : _streets) {
+                double min_dist_street = std::numeric_limits<double>::max();
+                for (auto& point : street.points) {
+                    min_dist_street = std::min<double>(min_dist_street, building.location.euclidean_distance(point));
+                }
+
+                if (min_dist_street < min_dist) {
+                    min_dist = min_dist_street;
+                    nearest = street;
+                }
+            }
+
+            return nearest;
         }
 };
 
@@ -502,6 +457,15 @@ int main(int argc, char* argv[]) {
         auto end_ser = std::chrono::high_resolution_clock::now();
         std::cout << "Serialization done " << get_duration(end_ser - start_ser) << std::endl;
     }
+
+    // Preprocessing (maybe before serializing)
+    std::cout << "Preprocessing..." << std::endl;
+    auto start_prep = std::chrono::high_resolution_clock::now();
+
+    solution.preprocess();
+
+    auto end_prep = std::chrono::high_resolution_clock::now();
+    std::cout << "Preprocessing done " << get_duration(end_prep - start_prep) << std::endl;
 
     httplib::Server svr;
     svr.set_mount_point("/", "./www");
