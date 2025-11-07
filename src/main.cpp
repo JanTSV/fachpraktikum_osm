@@ -54,6 +54,103 @@ std::string get_duration(const Duration& duration) {
     return out.str();
 }
 
+// Here we only have a 2DTree
+class KDTree {
+    public:
+        KDTree() : _root(nullptr) { }
+
+        void insert(const Point& point) {
+            if (!_root) {
+                _root = std::make_unique<Node>(point);
+                return;
+            }
+
+            Node* current = _root.get();
+            size_t depth = 0;
+
+            while (true) {
+                size_t cd = depth % 2;  // 2 dims
+
+                if (point[cd] < current->point[cd]) {
+                    if (current->left) {
+                        current = current->left.get();
+                    } else {
+                        current->left = std::make_unique<Node>(point);
+                        break;
+                    }
+                } else {
+                    if (current->right) {
+                        current = current->right.get();
+                    } else {
+                        current->right = std::make_unique<Node>(point);
+                        break;
+                    }
+                }
+
+                ++ depth;
+            }
+        }
+
+    private:
+        struct Node {
+            Point point;
+            std::unique_ptr<Node> left;
+            std::unique_ptr<Node> right;
+
+            Node(const Point point) : point(point), left(nullptr), right(nullptr) { }
+        };
+
+        std::unique_ptr<Node> _root;
+};
+
+class KDSolution : public ISolution {
+    public:
+        void add_building(double lat, double lon, const char* street, std::optional<HouseNumber> house_number) override {
+
+        }
+
+        void add_street(const char* name, std::vector<Point> points) override {
+
+        }
+
+        void add_admin_area(const char* name, std::vector<Point> boundary, uint8_t level) override {
+
+        }
+
+        size_t num_buildings() const override {
+            return 0;
+        }
+
+        size_t num_streets() const override {
+            return 0;
+        }
+
+        size_t num_admin_areas() const override {
+            return 0;
+        }
+
+        std::string get_buildings_in_view(double sw_lat, double sw_lon, double ne_lat, double ne_lon) override {
+            return "[]";
+        }
+
+        void preprocess() override {
+
+        }
+
+        void serialize(const std::string& path) const override {
+            std::ofstream ofs(path, std::ios::binary);
+            boost::archive::binary_oarchive oa(ofs);
+            oa << *this;
+        }
+
+    private:
+        friend class boost::serialization::access;
+        template<class Archive>
+        void serialize(Archive& ar, const unsigned int /*version*/) {
+        }
+
+};
+
 class NaiveSolution : public ISolution {
     public:
         void add_building(double lat, double lon, const char* street, std::optional<HouseNumber> house_number) override {
@@ -210,7 +307,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    NaiveSolution solution;
+    KDSolution solution;
     if (configuration.in_binary_file) {
         std::cout << "Loading binary data from " << configuration.input_file.filename() << "..." << std::endl;
         auto start_load = std::chrono::high_resolution_clock::now();
