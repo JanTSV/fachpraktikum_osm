@@ -12,15 +12,15 @@ double Point::euclidean_distance(Point& other) {
 
 Building::Building() : location(), street_idx(std::nullopt), house_number(std::nullopt) { }
 
-Building::Building(Point location_, std::optional<size_t> street_idx_, std::optional<HouseNumber> house_number_)
-    : location(location_), street_idx(street_idx_), house_number(house_number_) { }
+Building::Building(Point location, std::optional<size_t> street_idx, std::optional<HouseNumber> house_number)
+    : location(location), street_idx(street_idx), house_number(house_number) { }
 
 Street::Street() : name_idx(0), points() { }
 
-Street::Street(size_t name_idx_, std::vector<Point> points_)
-    : name_idx(name_idx_), points(points_) { }
+Street::Street(size_t name_idx, std::vector<Point> points)
+    : name_idx(name_idx), points(points) { }
 
 AdminArea::AdminArea() : name_idx(0), boundary(), level(0) { }
 
-AdminArea::AdminArea(size_t name_idx_, std::vector<Point> boundary_, uint8_t level_)
-    : name_idx(name_idx_), boundary(boundary_), level(level_) { }
+AdminArea::AdminArea(size_t name_idx, std::vector<Point> boundary, uint8_t level)
+    : name_idx(name_idx), boundary(boundary), level(level) { }

@@ -1,0 +1,13 @@
+#include "string_store.hpp"
+
+size_t NaiveStringStore::get_or_add(std::string value) {
+    // Very naive string search in O(m*n)
+    for (size_t i = 0; i < _data.size(); i++) {
+        if (value == _data[i]) {
+            return i;
+        }
+    }
+
+    _data.push_back(value);
+    return _data.size() - 1;
+}
