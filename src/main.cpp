@@ -23,7 +23,6 @@
 #include <boost/serialization/string.hpp>
 #include <boost/serialization/access.hpp>
 #include <boost/serialization/unique_ptr.hpp>
-#include <tuple>
 #include <vector>
 
 #include "httplib.h"
@@ -96,6 +95,41 @@ class KDTree {
             }
         }
 
+        std::vector<std::pair<size_t, std::array<double, 2>>> range_search(double min_lat, double min_lon, double max_lat, double max_lon) const {
+            std::vector<std::pair<size_t, std::array<double, 2>>> result;
+            if (!_root) return result;
+
+            std::vector<std::pair<const Node*, size_t>> stack;
+            stack.emplace_back(_root.get(), 0);
+
+            while (!stack.empty()) {
+                const auto [node, depth] = stack.back();
+                stack.pop_back();
+                if (!node) continue;
+
+                const double lat = node->point.x;
+                const double lon = node->point.y;
+
+                // check if point is inside bounding box
+                if (lat >= min_lat && lat <= max_lat &&
+                    lon >= min_lon && lon <= max_lon) {
+                    result.emplace_back(node->idx, std::array<double, 2>{lat, lon});
+                }
+
+                const size_t cd = depth % 2;
+                const double coord = (cd == 0) ? lat : lon;
+                const double min_bound = (cd == 0) ? min_lat : min_lon;
+                const double max_bound = (cd == 0) ? max_lat : max_lon;
+
+                if (min_bound <= coord && node->left)
+                    stack.emplace_back(node->left.get(), depth + 1);
+                if (max_bound >= coord && node->right)
+                    stack.emplace_back(node->right.get(), depth + 1);
+            }
+
+            return result;
+        }
+
         std::optional<size_t> find_nearest(const Point& target) {
             if (!_root) return std::nullopt;
 
@@ -103,8 +137,8 @@ class KDTree {
             double best_dist = std::numeric_limits<double>::max();
 
             // node, depth
-            std::vector<std::tuple<const Node*, size_t>> stack;
-            stack.push_back(std::make_tuple(_root.get(), 0));
+            std::vector<std::pair<const Node*, size_t>> stack;
+            stack.emplace_back(_root.get(), 0);
 
             while (!stack.empty()) {
                 auto [node, depth] = stack.back();
@@ -130,9 +164,9 @@ class KDTree {
                 }
 
                 if (far && std::abs(target[cd] - node->point[cd]) < best_dist) {
-                    stack.push_back(std::make_tuple(far, depth + 1));
+                    stack.emplace_back(far, depth + 1);
                 } else {
-                    stack.push_back(std::make_tuple(far, depth + 1));
+                    stack.emplace_back(far, depth + 1);
                 }
             }
 
