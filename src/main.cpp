@@ -95,7 +95,7 @@ class KDTree {
             }
         }
 
-        std::vector<std::pair<size_t, std::array<double, 2>>> range_search(double min_lat, double min_lon, double max_lat, double max_lon) const {
+        std::vector<std::pair<size_t, std::array<double, 2>>> range_search(double min_lat, double min_lon, double max_lat, double max_lon, std::vector<uint64_t>& sent_buildings) const {
             std::vector<std::pair<size_t, std::array<double, 2>>> result;
             if (!_root) return result;
 
@@ -113,7 +113,10 @@ class KDTree {
                 // check if point is inside bounding box
                 if (lat >= min_lat && lat <= max_lat &&
                     lon >= min_lon && lon <= max_lon) {
-                    result.emplace_back(node->idx, std::array<double, 2>{lat, lon});
+                    const size_t idx = node->idx;
+                    if ((sent_buildings[idx / 64] & (1 << (idx % 64))) == 0) {
+                        result.emplace_back(node->idx, std::array<double, 2>{lat, lon});
+                    }
                 }
 
                 const size_t cd = depth % 2;
@@ -257,7 +260,26 @@ class KDSolution : public ISolution {
         }
 
         std::string get_buildings_in_view(double sw_lat, double sw_lon, double ne_lat, double ne_lon) override {
-            return "[]";
+            if (_get_buildings_in_view_first_call) {
+                _sent_buildings.resize((num_buildings() + 63) / 64, 0);
+                _get_buildings_in_view_first_call = false;
+            }
+
+            std::ostringstream json;
+            json << "[";
+            bool first = true;
+
+            std::vector<std::pair<size_t, std::array<double, 2>>> buildings = _buildings_tree.range_search(sw_lat, sw_lon, ne_lat, ne_lon, _sent_buildings);
+            for (auto &[idx, coords] : buildings) {
+                if ((_sent_buildings[idx / 64] & (1 << (idx % 64))) != 0) continue;
+                if (!first) json << ",";
+                json << "[" << coords[0] << "," << coords[1] << "]";
+                _sent_buildings[idx / 64] |= 1U << (idx % 64);
+                first = false;
+            }
+            json << "]";
+
+            return json.str();
         }
 
         void preprocess() override {
@@ -295,6 +317,9 @@ class KDSolution : public ISolution {
 
         KDTree _streets_tree;
         std::vector<size_t> _streets;  // Name idx
+
+        std::vector<uint64_t> _sent_buildings;
+        bool _get_buildings_in_view_first_call = true;
 
         friend class boost::serialization::access;
         template<class Archive>
