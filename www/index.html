@@ -21,6 +21,7 @@
     const canvasLayer = L.layerGroup([], { renderer: L.canvas() }).addTo(map);
 
     map.on('moveend', () => {
+      canvasLayer.clearLayers();
       const bounds = map.getBounds();
       const sw = bounds.getSouthWest();
       const ne = bounds.getNorthEast();
