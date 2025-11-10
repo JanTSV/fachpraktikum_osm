@@ -272,7 +272,6 @@ class KDSolution : public ISolution {
 
             std::vector<std::pair<size_t, std::array<double, 2>>> buildings = _buildings_tree.range_search(sw_lat, sw_lon, ne_lat, ne_lon, _sent_buildings);
             for (auto &[idx, coords] : buildings) {
-                if ((_sent_buildings[idx / 64] & (1 << (idx % 64))) != 0) continue;
                 if (!first) json << ",";
                 json << "[" << coords[0] << "," << coords[1] << "]";
                 _sent_buildings[idx / 64] |= 1U << (idx % 64);
@@ -288,9 +287,25 @@ class KDSolution : public ISolution {
             auto nearest_building = _buildings_tree.find_nearest(target);
             if (!nearest_building) return "[]";
 
-            auto [_, coords] = *nearest_building;
+            auto [idx, coords] = *nearest_building;
             std::ostringstream json;
-            json << "[" << coords[0] << "," << coords[1] << "]";
+            json << "{";
+            json << "\"lat\":" << coords[0] << ",";
+            json << "\"lon\":" << coords[1] << ",";
+
+            if (_buildings[idx].street_idx) {
+                json << "\"street\":\"" << _string_store.get(*_buildings[idx].street_idx) << "\",";
+            } else {
+                json << "\"street\":null,";
+            }
+
+            if (_buildings[idx].house_number) {
+                json << "\"house_number\":\"" << *_buildings[idx].house_number << "\"";
+            } else {
+                json << "\"house_number\":null";
+            }
+
+            json << "}";
             return json.str();
         }
 

@@ -58,15 +58,21 @@
         body: JSON.stringify({ lat: lat, lon: lng })
       })
       .then(r => r.json())
-      .then(point => {
-        // Remove previous marker if it exists
-        if (nearestMarker) {
-          map.removeLayer(nearestMarker);
-        }
+      .then(data => {
+        if (!data || !data.lat || !data.lon) return;
 
-        if (point && point.length === 2) {
-          nearestMarker = L.circleMarker(point, { radius: 5, color: 'red' }).addTo(map);
-        }
+        // Remove previous marker if it exists
+        if (nearestMarker) map.removeLayer(nearestMarker);
+
+        // Add marker
+        let popupText = "";
+        if (data.street) popupText += data.street;
+        if (data.house_number) popupText += " " + data.house_number;
+
+        nearestMarker = L.circleMarker([data.lat, data.lon], { radius: 5, color: 'red' })
+          .addTo(map)
+          .bindPopup(popupText)
+          .openPopup();
       });
     });
   </script>

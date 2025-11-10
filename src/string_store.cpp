@@ -21,3 +21,8 @@ size_t MappedStringStore::get_or_add(const std::string& value) {
     _index[_data.back()] = idx;
     return idx;
 }
+
+
+std::string MappedStringStore::get(size_t idx) {
+    return _data[idx];
+}
