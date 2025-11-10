@@ -96,8 +96,8 @@ class KDTree {
             }
         }
 
-        std::vector<std::pair<size_t, std::array<double, 2>>> range_search(double min_lat, double min_lon, double max_lat, double max_lon) const {
-            std::vector<std::pair<size_t, std::array<double, 2>>> result;
+        std::vector<size_t> range_search(double min_lat, double min_lon, double max_lat, double max_lon) const {
+            std::vector<size_t> result;
             if (!_root) return result;
 
             std::vector<std::pair<const Node*, size_t>> stack;
@@ -115,7 +115,7 @@ class KDTree {
                 if (lat >= min_lat && lat <= max_lat &&
                     lon >= min_lon && lon <= max_lon) {
                     const size_t idx = node->idx;
-                    result.emplace_back(node->idx, std::array<double, 2>{lat, lon});
+                    result.emplace_back(node->idx);
                 }
 
                 const size_t cd = depth % 2;
@@ -132,7 +132,7 @@ class KDTree {
             return result;
         }
 
-        std::optional<std::pair<size_t, std::array<double, 2>>> find_nearest(const Point& target) {
+        std::optional<size_t> find_nearest(const Point& target) {
             if (!_root) return std::nullopt;
 
             const Node* best = nullptr;
@@ -172,7 +172,7 @@ class KDTree {
                 }
             }
 
-            if (best) return std::make_pair(best->idx, std::array<double, 2>{best->point.x, best->point.y});
+            if (best) return best->idx;
             return std::nullopt;
         }
 
@@ -221,10 +221,10 @@ class KDSolution : public ISolution {
             if (street) {
                 street_idx = _string_store.get_or_add(street);
             }
-            _buildings.emplace_back(street_idx, house_number);
+            Point location(lat, lon);
+            _buildings.emplace_back(location, street_idx, house_number);
 
             // Add building do 2d tree
-            Point location(lat, lon);
             _buildings_tree.insert(location, _buildings.size() - 1);
         }
 
@@ -263,10 +263,11 @@ class KDSolution : public ISolution {
             json << "[";
             bool first = true;
 
-            std::vector<std::pair<size_t, std::array<double, 2>>> buildings = _buildings_tree.range_search(sw_lat, sw_lon, ne_lat, ne_lon);
-            for (auto &[idx, coords] : buildings) {
+            std::vector<size_t> buildings = _buildings_tree.range_search(sw_lat, sw_lon, ne_lat, ne_lon);
+            for (auto idx : buildings) {
                 if (!first) json << ",";
-                json << "[" << coords[0] << "," << coords[1] << "]";
+                const Building& building = _buildings[idx];
+                json << "[" << building.location.x << "," << building.location.y << "]";
                 first = false;
             }
             json << "]";
@@ -279,20 +280,20 @@ class KDSolution : public ISolution {
             auto nearest_building = _buildings_tree.find_nearest(target);
             if (!nearest_building) return "[]";
 
-            auto [idx, coords] = *nearest_building;
+            const Building& building = _buildings[*nearest_building];
             std::ostringstream json;
             json << "{";
-            json << "\"lat\":" << coords[0] << ",";
-            json << "\"lon\":" << coords[1] << ",";
+            json << "\"lat\":" << building.location.x << ",";
+            json << "\"lon\":" << building.location.y << ",";
 
-            if (_buildings[idx].street_idx) {
-                json << "\"street\":\"" << _string_store.get(*_buildings[idx].street_idx) << "\",";
+            if (building.street_idx) {
+                json << "\"street\":\"" << _string_store.get(*building.street_idx) << "\",";
             } else {
                 json << "\"street\":null,";
             }
 
-            if (_buildings[idx].house_number) {
-                json << "\"house_number\":\"" << *_buildings[idx].house_number << "\"";
+            if (building.house_number) {
+                json << "\"house_number\":\"" << *building.house_number << "\"";
             } else {
                 json << "\"house_number\":null";
             }
@@ -302,7 +303,18 @@ class KDSolution : public ISolution {
         }
 
         void preprocess() override {
+            std::cout << "Assigning street names of nearest streets to buildings without it..." << std::endl;
+            size_t _i = 0;
+            const size_t _n = num_buildings();
+            for (auto &building : _buildings) {
+                if (building.street_idx) continue;
 
+                auto nearest_street = _streets_tree.find_nearest(Point(building.location.x, building.location.y));
+                if (!nearest_street) continue;
+
+                std::cout << "\t" << ++_i << " / " << _n << std::endl;
+                building.street_idx = *nearest_street;
+            }
         }
 
         void serialize(const std::string& path) const override {
@@ -312,27 +324,10 @@ class KDSolution : public ISolution {
         }
 
     private:
-        struct BuildingData {
-            public:
-                std::optional<size_t> street_idx;
-                std::optional<HouseNumber> house_number;
-
-                BuildingData() = default;
-                BuildingData(std::optional<size_t> street_idx, std::optional<HouseNumber> house_number) : street_idx(street_idx), house_number(house_number) { }
-
-            private:
-                friend class boost::serialization::access;
-                template<class Archive>
-                void serialize(Archive& ar, const unsigned int /*version*/) {
-                    ar & street_idx;
-                    ar & house_number;
-                }
-        };
-
         MappedStringStore _string_store;
 
         KDTree _buildings_tree;
-        std::vector<BuildingData> _buildings;
+        std::vector<Building> _buildings;
 
         KDTree _streets_tree;
         std::vector<size_t> _streets;  // Name idx
@@ -446,13 +441,13 @@ int main(int argc, char* argv[]) {
     }
 
     // Preprocessing (maybe before serializing)
-    // std::cout << "Preprocessing..." << std::endl;
-    // auto start_prep = std::chrono::high_resolution_clock::now();
+    std::cout << "Preprocessing..." << std::endl;
+    auto start_prep = std::chrono::high_resolution_clock::now();
 
-    // solution.preprocess();
+    solution.preprocess();
 
-    // auto end_prep = std::chrono::high_resolution_clock::now();
-    // std::cout << "Preprocessing done " << get_duration(end_prep - start_prep) << std::endl;
+    auto end_prep = std::chrono::high_resolution_clock::now();
+    std::cout << "Preprocessing done " << get_duration(end_prep - start_prep) << std::endl;
 
     httplib::Server svr;
     svr.set_mount_point("/", "./www");
