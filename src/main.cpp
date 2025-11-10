@@ -62,37 +62,46 @@ class KDTree {
     public:
         KDTree() : _root(nullptr), _size(0) { }
 
-        void insert(const Point& point, size_t idx) {
-            _size++;
+        void build_iterative(std::vector<std::pair<Point, size_t>> points) {
+            if (points.empty()) return;
 
-            if (!_root) {
-                _root = std::make_unique<Node>(point, idx);
-                return;
-            }
+            struct Task {
+                size_t start, end;
+                size_t depth;
+                Node* parent;
+                bool left_child;
+            };
 
-            Node* current = _root.get();
-            size_t depth = 0;
+            std::stack<Task> stack;
+            stack.push({0, points.size(), 0, nullptr, false});
+            _size = points.size();
+            _root = nullptr;
 
-            while (true) {
-                size_t cd = depth % 2;  // 2 dims
+            while (!stack.empty()) {
+                Task task = stack.top();
+                stack.pop();
 
-                if (point[cd] < current->point[cd]) {
-                    if (current->left) {
-                        current = current->left.get();
-                    } else {
-                        current->left = std::make_unique<Node>(point, idx);
-                        break;
-                    }
+                if (task.start >= task.end) continue;
+
+                size_t cd = task.depth % 2;
+
+                size_t median = task.start + (task.end - task.start) / 2;
+                std::nth_element(points.begin() + task.start, points.begin() + median, points.begin() + task.end,
+                                [cd](const auto& a, const auto& b) { return a.first[cd] < b.first[cd]; });
+
+                auto node = std::make_unique<Node>(points[median].first, points[median].second);
+                Node* node_ptr = node.get();
+
+                if (!task.parent) {
+                    _root = std::move(node);
+                } else if (task.left_child) {
+                    task.parent->left = std::move(node);
                 } else {
-                    if (current->right) {
-                        current = current->right.get();
-                    } else {
-                        current->right = std::make_unique<Node>(point, idx);
-                        break;
-                    }
+                    task.parent->right = std::move(node);
                 }
 
-                ++ depth;
+                stack.push({median + 1, task.end, task.depth + 1, node_ptr, false});
+                stack.push({task.start, median, task.depth + 1, node_ptr, true});
             }
         }
 
@@ -114,7 +123,6 @@ class KDTree {
                 // check if point is inside bounding box
                 if (lat >= min_lat && lat <= max_lat &&
                     lon >= min_lon && lon <= max_lon) {
-                    const size_t idx = node->idx;
                     result.emplace_back(node->idx);
                 }
 
@@ -221,11 +229,7 @@ class KDSolution : public ISolution {
             if (street) {
                 street_idx = _string_store.get_or_add(street);
             }
-            Point location(lat, lon);
-            _buildings.emplace_back(location, street_idx, house_number);
-
-            // Add building do 2d tree
-            _buildings_tree.insert(location, _buildings.size() - 1);
+            _buildings.emplace_back(Point(lat, lon), street_idx, house_number);
         }
 
         void add_street(const char* name, std::vector<Point> points) override {
@@ -233,13 +237,7 @@ class KDSolution : public ISolution {
             if (!name) return;
 
             // Add meta info to _streets
-            _streets.emplace_back(_string_store.get_or_add(name));
-            const size_t street_idx = _streets.size() - 1;
-
-            // Add all street points to 2d tree
-            for (auto point : points) {
-                _streets_tree.insert(point, street_idx);
-            }
+            _streets.emplace_back(_string_store.get_or_add(name), points);
         }
 
         void add_admin_area(const char* name, std::vector<Point> boundary, uint8_t level) override {
@@ -303,7 +301,22 @@ class KDSolution : public ISolution {
         }
 
         void preprocess() override {
-            std::cout << "Assigning street names of nearest streets to buildings without it..." << std::endl;
+            std::cout << "\tBuilding buildings kdtree..." << std::endl;
+            std::vector<std::pair<Point, size_t>> pts;
+            for (size_t i = 0; i < _buildings.size(); ++i) pts.emplace_back(_buildings[i].location, i);
+            _buildings_tree.build_iterative(pts);
+
+            std::cout << "\tBuilding streets kdtree..." << std::endl;
+            pts.clear();
+            for (size_t i = 0; i < _streets.size(); ++i) {
+                for (auto p : _streets[i].points) {
+                    pts.emplace_back(p, i);
+                }
+            }
+            _streets_tree.build_iterative(pts);
+
+
+            std::cout << "\tAssigning street names of nearest streets to buildings without it..." << std::endl;
             size_t _i = 0;
             const size_t _n = num_buildings();
             for (auto &building : _buildings) {
@@ -330,7 +343,7 @@ class KDSolution : public ISolution {
         std::vector<Building> _buildings;
 
         KDTree _streets_tree;
-        std::vector<size_t> _streets;  // Name idx
+        std::vector<Street> _streets;
 
         friend class boost::serialization::access;
         template<class Archive>
