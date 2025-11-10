@@ -18,7 +18,7 @@ const double& Point::operator[](size_t idx) const {
     else throw std::out_of_range("Point index out of range");
 }
 
-double Point::euclidean_distance(Point& other) {
+double Point::euclidean_distance(const Point& other) const {
     return std::sqrt(std::pow(x - other.x, 2) + std::pow(y - other.y, 2));
 }
 

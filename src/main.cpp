@@ -23,6 +23,7 @@
 #include <boost/serialization/string.hpp>
 #include <boost/serialization/access.hpp>
 #include <boost/serialization/unique_ptr.hpp>
+#include <tuple>
 #include <vector>
 
 #include "httplib.h"
@@ -56,7 +57,7 @@ std::string get_duration(const Duration& duration) {
     return out.str();
 }
 
-// Here we only have a 2DTree
+// Here we only need a 2DTree
 class KDTree {
     public:
         KDTree() : _root(nullptr), _size(0) { }
@@ -93,6 +94,50 @@ class KDTree {
 
                 ++ depth;
             }
+        }
+
+        std::optional<size_t> find_nearest(const Point& target) {
+            if (!_root) return std::nullopt;
+
+            const Node* best = nullptr;
+            double best_dist = std::numeric_limits<double>::max();
+
+            // node, depth
+            std::vector<std::tuple<const Node*, size_t>> stack;
+            stack.push_back(std::make_tuple(_root.get(), 0));
+
+            while (!stack.empty()) {
+                auto [node, depth] = stack.back();
+                stack.pop_back();
+                if (!node) continue;
+
+                const double dist = target.euclidean_distance(node->point);
+                if (dist < best_dist) {
+                    best_dist = dist;
+                    best = node;
+                }
+
+                size_t cd = depth % 2;
+                const Node* near = nullptr;
+                const Node* far = nullptr;
+
+                if (target[cd] < node->point[cd]) {
+                    near = node->left.get();
+                    far = node->right.get();
+                } else {
+                    near = node->right.get();
+                    far = node->left.get();
+                }
+
+                if (far && std::abs(target[cd] - node->point[cd]) < best_dist) {
+                    stack.push_back(std::make_tuple(far, depth + 1));
+                } else {
+                    stack.push_back(std::make_tuple(far, depth + 1));
+                }
+            }
+
+            if (best) return best->idx;
+            return std::nullopt;
         }
 
         size_t size() const {

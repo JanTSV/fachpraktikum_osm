@@ -22,7 +22,7 @@ public:
     double& operator[](size_t idx);
     const double& operator[](size_t idx) const;
 
-    double euclidean_distance(Point& other);
+    double euclidean_distance(const Point& other) const;
 
 private:
     friend class boost::serialization::access;
