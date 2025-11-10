@@ -1,3 +1,4 @@
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
@@ -133,7 +134,7 @@ class KDTree {
             return result;
         }
 
-        std::optional<size_t> find_nearest(const Point& target) {
+        std::optional<std::pair<size_t, std::array<double, 2>>> find_nearest(const Point& target) {
             if (!_root) return std::nullopt;
 
             const Node* best = nullptr;
@@ -166,14 +167,14 @@ class KDTree {
                     far = node->left.get();
                 }
 
+                stack.emplace_back(near, depth + 1);
+
                 if (far && std::abs(target[cd] - node->point[cd]) < best_dist) {
-                    stack.emplace_back(far, depth + 1);
-                } else {
                     stack.emplace_back(far, depth + 1);
                 }
             }
 
-            if (best) return best->idx;
+            if (best) return std::make_pair(best->idx, std::array<double, 2>{best->point.x, best->point.y});
             return std::nullopt;
         }
 
@@ -282,6 +283,17 @@ class KDSolution : public ISolution {
             return json.str();
         }
 
+        std::string get_nearest_building(double lat, double lon) {
+            Point target(lat, lon);
+            auto nearest_building = _buildings_tree.find_nearest(target);
+            if (!nearest_building) return "[]";
+
+            auto [_, coords] = *nearest_building;
+            std::ostringstream json;
+            json << "[" << coords[0] << "," << coords[1] << "]";
+            return json.str();
+        }
+
         void preprocess() override {
 
         }
@@ -331,123 +343,6 @@ class KDSolution : public ISolution {
             ar & _streets;
         }
 
-};
-
-class NaiveSolution : public ISolution {
-    public:
-        void add_building(double lat, double lon, const char* street, std::optional<HouseNumber> house_number) override {
-            // Store street name, it building has one tagged
-            std::optional<size_t> street_idx;
-            if (street) {
-                street_idx = _string_store.get_or_add(street);
-            }
-            // Construct building and add to vector
-            Point location{lat, lon};
-            _buildings.emplace_back(location, street_idx, house_number);
-        }
-
-        void add_street(const char* name, std::vector<Point> points) override {
-            if (!name) return;
-            _streets.emplace_back(_string_store.get_or_add(name), points);
-        }
-
-        void add_admin_area(const char* name, std::vector<Point> boundary, uint8_t level) override {
-            if (!name) return;
-            _admin_areas.emplace_back(_string_store.get_or_add(name), boundary, level);
-        }
-
-        size_t num_buildings() const override {
-            return _buildings.size();
-        }
-
-        size_t num_streets() const override {
-            return _streets.size();
-        }
-
-        size_t num_admin_areas() const override {
-            return _admin_areas.size();
-        }
-
-        std::string get_buildings_in_view(double sw_lat, double sw_lon, double ne_lat, double ne_lon) override {
-            if (_get_buildings_in_view_first_call) {
-                _sent_buildings.resize((num_buildings() + 63) / 64, 0);
-                _get_buildings_in_view_first_call = false;
-            }
-
-            std::ostringstream json;
-            json << "[";
-            bool first = true;
-
-            for (size_t i = 0; i < _buildings.size(); ++i) {
-                if ((_sent_buildings[i / 64] & (1 << (i % 64))) != 0) continue;
-                
-                const auto& b = _buildings[i];
-                if (b.location.x >= sw_lat && b.location.x <= ne_lat &&
-                    b.location.y >= sw_lon && b.location.y <= ne_lon) {
-                    if (!first) json << ",";
-                    json << "[" << b.location.x << "," << b.location.y << "]";
-                    _sent_buildings[i / 64] |= 1U << (i % 64);
-                    first = false;
-                }
-            }
-            json << "]";
-
-            return json.str();
-        }
-
-        void serialize(const std::string& path) const override {
-            std::ofstream ofs(path, std::ios::binary);
-            boost::archive::binary_oarchive oa(ofs);
-            oa << *this;
-        }
-
-        void preprocess() override {
-            // Find streets of buildings
-            for (auto& building : _buildings) {
-                if (!building.street_idx) {
-                    Street& nearest_street = find_nearest_street(building);
-                    building.street_idx = nearest_street.name_idx;
-                }
-            }
-
-            // Housenumber interpolation (undoable in good time here)
-        }
-
-    private:
-        NaiveStringStore _string_store;
-        std::vector<Building> _buildings;
-        std::vector<Street> _streets;
-        std::vector<AdminArea> _admin_areas;
-        std::vector<uint64_t> _sent_buildings;
-        bool _get_buildings_in_view_first_call = true;
-
-        friend class boost::serialization::access;
-        template<class Archive>
-        void serialize(Archive& ar, const unsigned int /*version*/) {
-            ar & _string_store;
-            ar & _buildings;
-            ar & _streets;
-            ar & _admin_areas;
-        }
-
-        Street& find_nearest_street(Building& building) {
-            Street& nearest = _streets[0];
-            double min_dist = std::numeric_limits<double>::max();
-
-            for (auto& street : _streets) {
-                double min_dist_street = std::numeric_limits<double>::max();
-                for (auto& point : street.points) {
-                    min_dist_street = std::min<double>(min_dist_street, building.location.euclidean_distance(point));
-                }
-
-                if (min_dist_street < min_dist) {
-                    min_dist = min_dist_street;
-                    nearest = street;
-                }
-            }
-
-            return nearest;
-        }
 };
 
 struct Configuration {
@@ -576,6 +471,19 @@ int main(int argc, char* argv[]) {
 
         res.status = 200;
         res.set_content(solution.get_buildings_in_view(sw_lat, sw_lon, ne_lat, ne_lon), "application/json");
+    });
+
+    // API endpoint for reverse geocoder
+    svr.Post("/nearest", [&solution](const httplib::Request &req, httplib::Response &res) {
+        double lat, lon;
+        bool ok = (sscanf(req.body.c_str(), R"({"lat":%lf,"lon":%lf})", &lat, &lon) == 2);
+        if (!ok) {
+            res.status = 400;
+            res.set_content("Invalid JSON format", "text/plain");
+            return;
+        }
+        res.status = 200;
+        res.set_content(solution.get_nearest_building(lat, lon), "application/json");
     });
 
     std::cout << "Server started at http://localhost:" << configuration.port << std::endl;

@@ -47,6 +47,28 @@
         });
       });
     });
+    
+    let nearestMarker = null;
+    map.on('click', e => {
+      const { lat, lng } = e.latlng;
+      
+      fetch('/nearest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lat: lat, lon: lng })
+      })
+      .then(r => r.json())
+      .then(point => {
+        // Remove previous marker if it exists
+        if (nearestMarker) {
+          map.removeLayer(nearestMarker);
+        }
+
+        if (point && point.length === 2) {
+          nearestMarker = L.circleMarker(point, { radius: 5, color: 'red' }).addTo(map);
+        }
+      });
+    });
   </script>
 </body>
 </html>
