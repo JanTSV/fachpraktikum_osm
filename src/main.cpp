@@ -60,9 +60,9 @@ std::string get_duration(const Duration& duration) {
 // Here we only need a 2DTree
 class KDTree {
     public:
-        KDTree() : _root(nullptr), _size(0) { }
+        KDTree() : _root(nullptr) { }
 
-        void build_iterative(std::vector<std::pair<Point, size_t>> points) {
+        void build(std::vector<std::pair<Point, size_t>> points) {
             if (points.empty()) return;
 
             struct Task {
@@ -74,7 +74,6 @@ class KDTree {
 
             std::stack<Task> stack;
             stack.push({0, points.size(), 0, nullptr, false});
-            _size = points.size();
             _root = nullptr;
 
             while (!stack.empty()) {
@@ -140,7 +139,7 @@ class KDTree {
             return result;
         }
 
-        std::optional<size_t> find_nearest(const Point& target) {
+        std::optional<size_t> find_nearest(const Point& target) const {
             if (!_root) return std::nullopt;
 
             const Node* best = nullptr;
@@ -184,10 +183,6 @@ class KDTree {
             return std::nullopt;
         }
 
-        size_t size() const {
-            return _size;
-        }
-
     private:
         struct Node {
             public:
@@ -211,13 +206,11 @@ class KDTree {
         };
 
         std::unique_ptr<Node> _root;
-        size_t _size;
 
         friend class boost::serialization::access;
         template<class Archive>
         void serialize(Archive& ar, const unsigned int /*version*/) {
             ar & _root;
-            ar & _size;
         }
 };
 
@@ -245,18 +238,18 @@ class KDSolution : public ISolution {
         }
 
         size_t num_buildings() const override {
-            return _buildings_tree.size();
+            return _buildings.size();
         }
 
         size_t num_streets() const override {
-            return _streets_tree.size();
+            return _streets.size();
         }
 
         size_t num_admin_areas() const override {
             return 0;
         }
 
-        std::string get_buildings_in_view(double sw_lat, double sw_lon, double ne_lat, double ne_lon) override {
+        std::string get_buildings_in_view(double sw_lat, double sw_lon, double ne_lat, double ne_lon) const override {
             std::ostringstream json;
             json << "[";
             bool first = true;
@@ -273,7 +266,7 @@ class KDSolution : public ISolution {
             return json.str();
         }
 
-        std::string get_nearest_building(double lat, double lon) {
+        std::string get_nearest_building(double lat, double lon) const {
             Point target(lat, lon);
             auto nearest_building = _buildings_tree.find_nearest(target);
             if (!nearest_building) return "[]";
@@ -304,30 +297,7 @@ class KDSolution : public ISolution {
             std::cout << "\tBuilding buildings kdtree..." << std::endl;
             std::vector<std::pair<Point, size_t>> pts;
             for (size_t i = 0; i < _buildings.size(); ++i) pts.emplace_back(_buildings[i].location, i);
-            _buildings_tree.build_iterative(pts);
-
-            std::cout << "\tBuilding streets kdtree..." << std::endl;
-            pts.clear();
-            for (size_t i = 0; i < _streets.size(); ++i) {
-                for (auto p : _streets[i].points) {
-                    pts.emplace_back(p, i);
-                }
-            }
-            _streets_tree.build_iterative(pts);
-
-
-            std::cout << "\tAssigning street names of nearest streets to buildings without it..." << std::endl;
-            size_t _i = 0;
-            const size_t _n = num_buildings();
-            for (auto &building : _buildings) {
-                if (building.street_idx) continue;
-
-                auto nearest_street = _streets_tree.find_nearest(Point(building.location.x, building.location.y));
-                if (!nearest_street) continue;
-
-                std::cout << "\t" << ++_i << " / " << _n << std::endl;
-                building.street_idx = *nearest_street;
-            }
+            _buildings_tree.build(pts);
         }
 
         void serialize(const std::string& path) const override {
@@ -342,19 +312,15 @@ class KDSolution : public ISolution {
         KDTree _buildings_tree;
         std::vector<Building> _buildings;
 
-        KDTree _streets_tree;
         std::vector<Street> _streets;
 
         friend class boost::serialization::access;
         template<class Archive>
         void serialize(Archive& ar, const unsigned int /*version*/) {
             ar & _string_store;
-            ar & _buildings_tree;
             ar & _buildings;
-            ar & _streets_tree;
             ar & _streets;
         }
-
 };
 
 struct Configuration {
@@ -453,7 +419,7 @@ int main(int argc, char* argv[]) {
         std::cout << "Serialization done " << get_duration(end_ser - start_ser) << std::endl;
     }
 
-    // Preprocessing (maybe before serializing)
+    // Preprocessing
     std::cout << "Preprocessing..." << std::endl;
     auto start_prep = std::chrono::high_resolution_clock::now();
 

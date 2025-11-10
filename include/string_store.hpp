@@ -27,7 +27,7 @@ struct NaiveStringStore {
 struct MappedStringStore {
     public:
         size_t get_or_add(const std::string& value);
-        std::string get(size_t idx);
+        std::string get(size_t idx) const;
 
     private:
         std::vector<std::string> _data;
