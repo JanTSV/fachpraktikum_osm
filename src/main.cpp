@@ -58,9 +58,9 @@ std::string get_duration(const Duration& duration) {
     return out.str();
 }
 
-class KDTreeCacheFriendly {
+class KDTree {
     public:
-        KDTreeCacheFriendly() = default;
+        KDTree() = default;
 
         void build(std::vector<std::pair<Point, size_t>> points) {
             _nodes.clear();
@@ -115,7 +115,35 @@ class KDTreeCacheFriendly {
             compute_bboxes();
         }
 
-        std::optional<size_t> find_nearest(const Point& target) {
+        std::vector<size_t> range_search(double min_x, double min_y, double max_x, double max_y) const {
+            std::vector<size_t> result;
+            if (_nodes.empty()) return result;
+
+            std::array<size_t, 64> stack;
+            size_t top = 0;
+            stack[top++] = 0;
+
+            while (top > 0) {
+                const Node& node = _nodes[stack[--top]];
+
+                if (node.tr.x < min_x || node.bl.x > max_x ||
+                    node.tr.y < min_y || node.bl.y > max_y)
+                    continue;
+
+                if (node.point.x >= min_x && node.point.x <= max_x &&
+                    node.point.y >= min_y && node.point.y <= max_y)
+                    result.push_back(node.idx);
+
+                if (node.left != std::numeric_limits<size_t>::max())
+                    stack[top++] = node.left;
+                if (node.right != std::numeric_limits<size_t>::max())
+                    stack[top++] = node.right;
+            }
+
+            return result;
+        }
+
+        std::optional<size_t> find_nearest(const Point& target) const {
             if (_nodes.empty()) return std::nullopt;
 
             size_t best_idx = std::numeric_limits<size_t>::max();
@@ -239,163 +267,6 @@ class KDTreeCacheFriendly {
         }
 };
 
-// Here we only need a 2DTree
-class KDTree {
-    public:
-        KDTree() : _root(nullptr) { }
-
-        void build(std::vector<std::pair<Point, size_t>> points) {
-            if (points.empty()) return;
-
-            struct Task {
-                size_t start, end;
-                size_t depth;
-                Node* parent;
-                bool left_child;
-            };
-
-            std::stack<Task> stack;
-            stack.push({0, points.size(), 0, nullptr, false});
-            _root = nullptr;
-
-            while (!stack.empty()) {
-                Task task = stack.top();
-                stack.pop();
-
-                if (task.start >= task.end) continue;
-
-                size_t cd = task.depth % 2;
-
-                size_t median = task.start + (task.end - task.start) / 2;
-                std::nth_element(points.begin() + task.start, points.begin() + median, points.begin() + task.end,
-                                [cd](const auto& a, const auto& b) { return a.first[cd] < b.first[cd]; });
-
-                auto node = std::make_unique<Node>(points[median].first, points[median].second);
-                Node* node_ptr = node.get();
-
-                if (!task.parent) {
-                    _root = std::move(node);
-                } else if (task.left_child) {
-                    task.parent->left = std::move(node);
-                } else {
-                    task.parent->right = std::move(node);
-                }
-
-                stack.push({median + 1, task.end, task.depth + 1, node_ptr, false});
-                stack.push({task.start, median, task.depth + 1, node_ptr, true});
-            }
-        }
-
-        std::vector<size_t> range_search(double min_lat, double min_lon, double max_lat, double max_lon) const {
-            std::vector<size_t> result;
-            if (!_root) return result;
-
-            std::vector<std::pair<const Node*, size_t>> stack;
-            stack.emplace_back(_root.get(), 0);
-
-            while (!stack.empty()) {
-                const auto [node, depth] = stack.back();
-                stack.pop_back();
-                if (!node) continue;
-
-                const double lat = node->point.x;
-                const double lon = node->point.y;
-
-                // check if point is inside bounding box
-                if (lat >= min_lat && lat <= max_lat &&
-                    lon >= min_lon && lon <= max_lon) {
-                    result.emplace_back(node->idx);
-                }
-
-                const size_t cd = depth % 2;
-                const double coord = (cd == 0) ? lat : lon;
-                const double min_bound = (cd == 0) ? min_lat : min_lon;
-                const double max_bound = (cd == 0) ? max_lat : max_lon;
-
-                if (min_bound <= coord && node->left)
-                    stack.emplace_back(node->left.get(), depth + 1);
-                if (max_bound >= coord && node->right)
-                    stack.emplace_back(node->right.get(), depth + 1);
-            }
-
-            return result;
-        }
-
-        std::optional<size_t> find_nearest(const Point& target) const {
-            if (!_root) return std::nullopt;
-
-            const Node* best = nullptr;
-            double best_dist = std::numeric_limits<double>::max();
-
-            // node, depth
-            std::vector<std::pair<const Node*, size_t>> stack;
-            stack.emplace_back(_root.get(), 0);
-
-            while (!stack.empty()) {
-                auto [node, depth] = stack.back();
-                stack.pop_back();
-                if (!node) continue;
-
-                const double dist = target.euclidean_distance(node->point);
-                if (dist < best_dist) {
-                    best_dist = dist;
-                    best = node;
-                }
-
-                size_t cd = depth % 2;
-                const Node* near = nullptr;
-                const Node* far = nullptr;
-
-                if (target[cd] < node->point[cd]) {
-                    near = node->left.get();
-                    far = node->right.get();
-                } else {
-                    near = node->right.get();
-                    far = node->left.get();
-                }
-
-                stack.emplace_back(near, depth + 1);
-
-                if (far && std::abs(target[cd] - node->point[cd]) < best_dist) {
-                    stack.emplace_back(far, depth + 1);
-                }
-            }
-
-            if (best) return best->idx;
-            return std::nullopt;
-        }
-
-    private:
-        struct Node {
-            public:
-                Point point;
-                size_t idx;
-                std::unique_ptr<Node> left;
-                std::unique_ptr<Node> right;
-
-                Node() = default;
-                Node(const Point point, size_t idx) : point(point), idx(idx), left(nullptr), right(nullptr) { }
-
-            private:
-                friend class boost::serialization::access;
-                template<class Archive>
-                void serialize(Archive& ar, const unsigned int /*version*/) {
-                    ar & point;
-                    ar & idx;
-                    ar & left;
-                    ar & right;
-                }
-        };
-
-        std::unique_ptr<Node> _root;
-
-        friend class boost::serialization::access;
-        template<class Archive>
-        void serialize(Archive& ar, const unsigned int /*version*/) {
-            ar & _root;
-        }
-};
-
 class KDSolution : public ISolution {
     public:
         void add_building(double lat, double lon, const char* street, std::optional<HouseNumber> house_number) override {
@@ -485,14 +356,7 @@ class KDSolution : public ISolution {
             auto end = std::chrono::high_resolution_clock::now();
             std::cout << "\tKDtree built " << get_duration(end - start) << std::endl;
 
-            std::cout << "\tBuilding buildings cache friendly kdtree..." << std::endl;
-            start = std::chrono::high_resolution_clock::now();
-            KDTreeCacheFriendly tree;
-            tree.build(pts);
-            end = std::chrono::high_resolution_clock::now();
-            std::cout << "\tCache friendly KDtree built " << get_duration(end - start) << std::endl;
-
-            std::cout << "\tInterpolating street names for buildings witout a street assigned to them..." << std::endl;
+            std::cout << "\tInterpolating street names for buildings without a street assigned to them..." << std::endl;
             start = std::chrono::high_resolution_clock::now();
             const size_t total = _buildings.size();
             for (size_t i = 0; i < total; i++) {
@@ -500,11 +364,13 @@ class KDSolution : public ISolution {
                 if (building.street_idx) continue;
 
                 // Check if nearest building has a street name
-                std::optional<size_t> nearest_idx = tree.find_nearest(building.location);
+                std::optional<size_t> nearest_idx = _buildings_tree.find_nearest(building.location);
                 if (nearest_idx && _buildings[*nearest_idx].street_idx) {
                     building.street_idx = _buildings[*nearest_idx].street_idx;
                     std::cout << "\t\t" << i << " / " << total << std::endl;
                 }
+
+                // TODO: Otherwise find nearest street segment
             }
             end = std::chrono::high_resolution_clock::now();
             std::cout << "\tStreet names assigned " << get_duration(end - start) << std::endl;
