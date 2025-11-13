@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -56,6 +57,112 @@ std::string get_duration(const Duration& duration) {
 
     return out.str();
 }
+
+class KDTreeCacheFriendly {
+    public:
+        KDTreeCacheFriendly() = default;
+
+        void build(std::vector<std::pair<Point, size_t>> points) {
+            _nodes.clear();
+            _nodes.reserve(points.size());
+
+            struct Task {
+                size_t start;
+                size_t end;
+                size_t depth;
+                size_t parent;
+                bool is_left;
+            };
+
+            std::vector<Task> stack;
+            stack.push_back({0, points.size(), 0, std::numeric_limits<size_t>::max(), false});
+
+            while (!stack.empty()) {
+                auto task = stack.back();
+                stack.pop_back();
+                if (task.start >= task.end) continue;
+
+                size_t mid = task.start + (task.end - task.start) / 2;
+                size_t axis = task.depth % 2;
+
+                std::nth_element(
+                    points.begin() + task.start, points.begin() + mid, points.begin() + task.end,
+                    [axis](auto& a, auto& b) { return a.first[axis] < b.first[axis]; }
+                );
+
+                Node node(Point(points[mid].first), points[mid].second, std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max(), axis);
+
+                size_t node_idx = _nodes.size();
+                _nodes.push_back(node);
+
+                if (task.parent != std::numeric_limits<size_t>::max()) {
+                    if (task.is_left) _nodes[task.parent].left = node_idx;
+                    else _nodes[task.parent].right = node_idx;
+                }
+
+                stack.push_back({mid + 1, task.end, task.depth + 1, node_idx, false});
+                stack.push_back({task.start, mid, task.depth + 1, node_idx, true});
+            }
+        }
+
+        std::optional<size_t> find_nearest(const Point& target) {
+            if (_nodes.empty()) return std::nullopt;
+
+            size_t best_idx = std::numeric_limits<size_t>::max();
+            double best_dist_squared = std::numeric_limits<double>::max();
+
+            struct StackItem {
+                size_t idx;
+                uint8_t depth;
+            };
+
+            std::vector<StackItem> stack;
+            stack.reserve(64);
+            stack.push_back({0, 0});
+
+            while (!stack.empty()) {
+                auto [ni, depth] = stack.back();
+                stack.pop_back();
+                const Node& node = _nodes[ni];
+
+                double dx = target.x - node.point.x;
+                double dy = target.y - node.point.y;
+                double dist_squared = dx * dx + dy * dy;
+
+                if (dist_squared < best_dist_squared) {
+                    best_dist_squared = dist_squared;
+                    best_idx = node.idx;
+                }
+
+                uint8_t axis = node.axis;
+                double diff = (axis == 0) ? dx : dy;
+
+                size_t near_child = (diff < 0) ? node.left : node.right;
+                size_t far_child = (diff < 0) ? node.right : node.left;
+
+                if (near_child != std::numeric_limits<size_t>::max()) stack.push_back({near_child, depth + 1});
+                if (far_child != std::numeric_limits<size_t>::max() && diff * diff < best_dist_squared) stack.push_back({far_child, depth + 1});
+            }
+
+            return best_idx;
+        }
+
+    private:
+        struct Node {
+            public:
+                Point point;
+                size_t idx;
+                size_t left;
+                size_t right;
+                uint8_t axis;
+
+                Node() = default;
+                Node(Point point, size_t idx, size_t left, size_t right, uint8_t axis)
+                    : point(point), idx(idx), left(left), right(right), axis(axis) { }
+        };
+
+        std::vector<Node> _nodes;
+};
 
 // Here we only need a 2DTree
 class KDTree {
@@ -294,10 +401,39 @@ class KDSolution : public ISolution {
         }
 
         void preprocess() override {
-            std::cout << "\tBuilding buildings kdtree..." << std::endl;
             std::vector<std::pair<Point, size_t>> pts;
             for (size_t i = 0; i < _buildings.size(); ++i) pts.emplace_back(_buildings[i].location, i);
+
+            std::cout << "\tBuilding buildings kdtree..." << std::endl;
+            auto start = std::chrono::high_resolution_clock::now();
             _buildings_tree.build(pts);
+            auto end = std::chrono::high_resolution_clock::now();
+            std::cout << "\tKDtree built " << get_duration(end - start) << std::endl;
+
+            std::cout << "\tBuilding buildings cache friendly kdtree..." << std::endl;
+            start = std::chrono::high_resolution_clock::now();
+            KDTreeCacheFriendly tree;
+            tree.build(pts);
+            end = std::chrono::high_resolution_clock::now();
+            std::cout << "\tCache friendly KDtree built " << get_duration(end - start) << std::endl;
+
+            std::cout << "\tInterpolating street names for buildings witout a street assigned to them..." << std::endl;
+            start = std::chrono::high_resolution_clock::now();
+            const size_t total = _buildings.size();
+            for (size_t i = 0; i < total; i++) {
+                auto& building = _buildings[i];
+                if (building.street_idx) continue;
+
+                // Check if nearest building has a street name
+                std::optional<size_t> nearest_idx = tree.find_nearest(building.location);
+                if (nearest_idx && _buildings[*nearest_idx].street_idx) {
+                    building.street_idx = _buildings[*nearest_idx].street_idx;
+                }
+
+                std::cout << "\t\t" << i << " / " << total << std::endl;
+            }
+            end = std::chrono::high_resolution_clock::now();
+            std::cout << "\tStreet names assigned " << get_duration(end - start) << std::endl;
         }
 
         void serialize(const std::string& path) const override {
@@ -400,8 +536,8 @@ int main(int argc, char* argv[]) {
             osmium::apply(area_buffer, handler);
         }));
         reader.close();
-        auto end = std::chrono::high_resolution_clock::now();
-        std::cout << "Parsing done " << get_duration(end - start_parsing) << std::endl;
+        auto end_parsing = std::chrono::high_resolution_clock::now();
+        std::cout << "Parsing done " << get_duration(end_parsing - start_parsing) << std::endl;
     }
    
     std::cout << "Number of buildings: " << solution.num_buildings() << std::endl;
