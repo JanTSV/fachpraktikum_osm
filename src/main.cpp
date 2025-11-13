@@ -90,7 +90,15 @@ class KDTreeCacheFriendly {
                     [axis](auto& a, auto& b) { return a.first[axis] < b.first[axis]; }
                 );
 
-                Node node(Point(points[mid].first), points[mid].second, std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max(), axis);
+                Point point = points[mid].first;
+
+                Node node(point,
+                          points[mid].second,
+                          std::numeric_limits<size_t>::max(),
+                          std::numeric_limits<size_t>::max(),
+                          axis,
+                          Point(point.x, point.y),
+                          Point(point.x, point.y));
 
                 size_t node_idx = _nodes.size();
                 _nodes.push_back(node);
@@ -103,6 +111,8 @@ class KDTreeCacheFriendly {
                 stack.push_back({mid + 1, task.end, task.depth + 1, node_idx, false});
                 stack.push_back({task.start, mid, task.depth + 1, node_idx, true});
             }
+
+            compute_bboxes();
         }
 
         std::optional<size_t> find_nearest(const Point& target) {
@@ -116,14 +126,12 @@ class KDTreeCacheFriendly {
                 uint8_t depth;
             };
 
-            std::vector<StackItem> stack;
-            stack.reserve(64);
-            stack.push_back({0, 0});
+            std::array<size_t, 64> stack;
+            size_t top = 0;
+            stack[top++] = 0;
 
-            while (!stack.empty()) {
-                auto [ni, depth] = stack.back();
-                stack.pop_back();
-                const Node& node = _nodes[ni];
+            while (top > 0) {
+                const Node& node = _nodes[stack[--top]];
 
                 double dx = target.x - node.point.x;
                 double dy = target.y - node.point.y;
@@ -134,14 +142,23 @@ class KDTreeCacheFriendly {
                     best_idx = node.idx;
                 }
 
-                uint8_t axis = node.axis;
-                double diff = (axis == 0) ? dx : dy;
+                size_t near = std::numeric_limits<size_t>::max();
+                size_t far  = std::numeric_limits<size_t>::max();
 
-                size_t near_child = (diff < 0) ? node.left : node.right;
-                size_t far_child = (diff < 0) ? node.right : node.left;
+                double diff = (node.axis == 0 ? dx : dy);
+                if (diff < 0) {
+                    near = node.left;
+                    far  = node.right;
+                } else {
+                    near = node.right;
+                    far  = node.left;
+                }
 
-                if (near_child != std::numeric_limits<size_t>::max()) stack.push_back({near_child, depth + 1});
-                if (far_child != std::numeric_limits<size_t>::max() && diff * diff < best_dist_squared) stack.push_back({far_child, depth + 1});
+                if (near != std::numeric_limits<size_t>::max()) stack[top++] = near;
+                if (far != std::numeric_limits<size_t>::max()) {
+                    const Node& far_node = _nodes[far];
+                    if (distance_to_box(target, far_node) < best_dist_squared) stack[top++] = far;
+                }
             }
 
             return best_idx;
@@ -154,14 +171,72 @@ class KDTreeCacheFriendly {
                 size_t idx;
                 size_t left;
                 size_t right;
+
+                // Bounding box
+                Point bl;
+                Point tr;
+
                 uint8_t axis;
 
                 Node() = default;
-                Node(Point point, size_t idx, size_t left, size_t right, uint8_t axis)
-                    : point(point), idx(idx), left(left), right(right), axis(axis) { }
+                Node(Point point, size_t idx, size_t left, size_t right, uint8_t axis, Point bl, Point tr)
+                    : point(point), idx(idx), left(left), right(right), axis(axis), bl(bl), tr(tr) { }
         };
 
         std::vector<Node> _nodes;
+
+        void compute_bboxes() {
+            if (_nodes.empty()) return;
+
+            std::vector<size_t> order;
+            order.reserve(_nodes.size());
+
+            std::array<std::pair<size_t, bool>, 64> stack;
+            int top = 0;
+            stack[top++] = {0, false};
+
+            while (top > 0) {
+                auto [idx, visited] = stack[--top];
+                if (idx == std::numeric_limits<size_t>::max()) continue;
+                if (visited) {
+                    order.push_back(idx);
+                    continue;
+                }
+                stack[top++] = {idx, true};
+                if (_nodes[idx].right != std::numeric_limits<size_t>::max()) stack[top++] = {_nodes[idx].right, false};
+                if (_nodes[idx].left  != std::numeric_limits<size_t>::max()) stack[top++] = {_nodes[idx].left, false};
+            }
+
+            for (size_t idx : order) {
+                Node& n = _nodes[idx];
+                if (n.left != std::numeric_limits<size_t>::max()) {
+                    const Node& l = _nodes[n.left];
+                    n.bl.x = std::min(n.bl.x, l.bl.x);
+                    n.bl.y = std::min(n.bl.y, l.bl.y);
+                    n.tr.x = std::max(n.tr.x, l.tr.x);
+                    n.tr.y = std::max(n.tr.y, l.tr.y);
+                }
+                if (n.right != std::numeric_limits<size_t>::max()) {
+                    const Node& r = _nodes[n.right];
+                    n.bl.x = std::min(n.bl.x, r.bl.x);
+                    n.bl.y = std::min(n.bl.y, r.bl.y);
+                    n.tr.x = std::max(n.tr.x, r.tr.x);
+                    n.tr.y = std::max(n.tr.y, r.tr.y);
+                }
+            }
+        }
+
+        inline double distance_to_box(const Point& p, const Node& n) const {
+            double dx = 0.0;
+            if (p.x < n.bl.x) dx = n.bl.x - p.x;
+            else if (p.x > n.tr.x) dx = p.x - n.tr.x;
+
+            double dy = 0.0;
+            if (p.y < n.bl.y) dy = n.bl.y - p.y;
+            else if (p.y > n.tr.y) dy = p.y - n.tr.y;
+
+            return dx * dx + dy * dy;
+        }
 };
 
 // Here we only need a 2DTree
@@ -428,9 +503,8 @@ class KDSolution : public ISolution {
                 std::optional<size_t> nearest_idx = tree.find_nearest(building.location);
                 if (nearest_idx && _buildings[*nearest_idx].street_idx) {
                     building.street_idx = _buildings[*nearest_idx].street_idx;
+                    std::cout << "\t\t" << i << " / " << total << std::endl;
                 }
-
-                std::cout << "\t\t" << i << " / " << total << std::endl;
             }
             end = std::chrono::high_resolution_clock::now();
             std::cout << "\tStreet names assigned " << get_duration(end - start) << std::endl;
