@@ -38,6 +38,7 @@
 
     const buildingsLayer = L.layerGroup([], { renderer: L.canvas() }).addTo(map);
     const streetsLayer = L.layerGroup().addTo(map);
+    const adminLayer = L.layerGroup().addTo(map);
 
     // checkboxes
     const chkBuildings = document.getElementById("chkBuildings");
@@ -54,11 +55,20 @@
         map.removeLayer(buildingsLayer);
       }
 
-      if (chkStreets.checked) map.addLayer(streetsLayer);
-      else map.removeLayer(streetsLayer);
+      if (chkStreets.checked) {
+        map.addLayer(streetsLayer);
+        fetchStreets(getBoundingBox());
+      }
+      else {
+        map.removeLayer(streetsLayer);
+      }
 
-      if (chkAdmins.checked) map.addLayer(adminLayer);
-      else map.removeLayer(adminLayer);
+      if (chkAdmins.checked) {
+        map.addLayer(adminLayer);
+      }
+      else {
+        map.removeLayer(adminLayer);
+      }
     }
 
     chkBuildings.onchange = updateLayerVisibility;
@@ -98,11 +108,34 @@
       });
     }
 
+    function fetchStreets(payload) {
+      fetch('/streets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      .then(r => r.json())
+      .then(streets => {
+        streets.forEach(street => {
+          const latlngs = street.points.map(p => [p[0], p[1]]);
+          L.polyline(latlngs, { color: 'orange', weight: 4 })
+            .addTo(streetsLayer)
+            .bindPopup(street.name);
+        });
+      });
+    }
+
     map.on('moveend', () => {
       // BUILDINGS
       buildingsLayer.clearLayers();
       if (chkBuildings.checked) {
         fetchBuildings(getBoundingBox());
+      }
+
+      // STREETS
+      streetsLayer.clearLayers();
+      if (chkStreets.checked) {
+        fetchStreets(getBoundingBox());
       }
     });
       

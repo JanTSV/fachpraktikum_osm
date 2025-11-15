@@ -320,6 +320,39 @@ class KDSolution : public ISolution {
             return json.str();
         }
 
+        std::string get_streets_in_view(double sw_lat, double sw_lon, double ne_lat, double ne_lon) const override {
+            std::ostringstream json;
+            json << "[";
+
+            std::vector<size_t> streets = _streets_tree.range_search(sw_lat, sw_lon, ne_lat, ne_lon);
+            std::unordered_set<size_t> streets_in_view;
+            for (size_t street_idx : streets) {
+                streets_in_view.insert(street_idx);
+            }
+            
+            bool first = true;
+            for (size_t s : streets_in_view) {
+                const auto &street = _streets[s];
+
+                if (!first) json << ",";
+                first = false;
+
+                json << "{\"name\":\""
+                    << _string_store.get(street.name_idx)
+                    << "\",\"points\":[";
+
+                for (size_t i = 0; i < street.points.size(); i++) {
+                    json << "[" << street.points[i].x << "," << street.points[i].y << "]";
+                    if (i + 1 < street.points.size()) json << ",";
+                }
+
+                json << "]}";
+            }
+            
+            json << "]";
+            return json.str();
+        }
+
         std::string get_nearest_building(double lat, double lon) const {
             Point target(lat, lon);
             auto nearest_building = _buildings_tree.find_nearest(target);
@@ -542,6 +575,26 @@ int main(int argc, char* argv[]) {
 
         res.status = 200;
         res.set_content(solution.get_buildings_in_view(sw_lat, sw_lon, ne_lat, ne_lon), "application/json");
+    });
+
+    // API endpoint for streets
+    svr.Post("/streets", [&solution](const httplib::Request &req, httplib::Response &res) {
+        // Read viewport boundary
+        double sw_lat, sw_lon, ne_lat, ne_lon;
+        bool ok = (sscanf(
+            req.body.c_str(),
+            R"({"swLat":%lf,"swLon":%lf,"neLat":%lf,"neLon":%lf})",
+            &sw_lat, &sw_lon, &ne_lat, &ne_lon
+        ) == 4);
+
+        if (!ok) {
+            res.status = 400;
+            res.set_content("Invalid JSON format", "text/plain");
+            return;
+        }
+
+        res.status = 200;
+        res.set_content(solution.get_streets_in_view(sw_lat, sw_lon, ne_lat, ne_lon), "application/json");
     });
 
     // API endpoint for reverse geocoder
