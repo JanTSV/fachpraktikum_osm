@@ -6,9 +6,27 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <style>
     #map { height: 100vh; }
+
+    #controls {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 9999;
+      background: white;
+      padding: 8px 12px;
+      border-radius: 6px;
+      box-shadow: 0 0 6px rgba(0,0,0,0.3);
+      font-family: sans-serif;
+    }
   </style>
 </head>
 <body>
+  <div id="controls">
+    <label><input type="checkbox" id="chkBuildings" checked> Buildings</label><br>
+    <label><input type="checkbox" id="chkStreets" checked> Streets</label><br>
+    <label><input type="checkbox" id="chkAdmins" checked> Admin areas</label>
+  </div>
+
   <div id="map"></div>
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script>
@@ -18,20 +36,51 @@
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
 
-    const canvasLayer = L.layerGroup([], { renderer: L.canvas() }).addTo(map);
+    const buildingsLayer = L.layerGroup([], { renderer: L.canvas() }).addTo(map);
+    const streetsLayer = L.layerGroup().addTo(map);
 
-    map.on('moveend', () => {
-      canvasLayer.clearLayers();
+    // checkboxes
+    const chkBuildings = document.getElementById("chkBuildings");
+    const chkStreets = document.getElementById("chkStreets");
+    const chkAdmins = document.getElementById("chkAdmins");
+
+    // visibility of layers depending on checkboxes
+    function updateLayerVisibility() {
+      if (chkBuildings.checked) {
+        map.addLayer(buildingsLayer);
+        fetchBuildings(getBoundingBox());
+      }
+      else {
+        map.removeLayer(buildingsLayer);
+      }
+
+      if (chkStreets.checked) map.addLayer(streetsLayer);
+      else map.removeLayer(streetsLayer);
+
+      if (chkAdmins.checked) map.addLayer(adminLayer);
+      else map.removeLayer(adminLayer);
+    }
+
+    chkBuildings.onchange = updateLayerVisibility;
+    chkStreets.onchange = updateLayerVisibility;
+    chkAdmins.onchange = updateLayerVisibility;
+
+    function getBoundingBox() {
       const bounds = map.getBounds();
       const sw = bounds.getSouthWest();
       const ne = bounds.getNorthEast();
 
-      const payload = {
+      const box = {
         swLat: sw.lat,
         swLon: sw.lng,
         neLat: ne.lat,
         neLon: ne.lng
       };
+
+      return box;
+    }
+
+    function fetchBuildings(payload) {
       fetch('/buildings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -43,12 +92,21 @@
           L.circleMarker([lat, lon], {
             radius: 2,
             color: 'blue',
-            renderer: canvasLayer.options.renderer
-          }).addTo(canvasLayer);
+            renderer: buildingsLayer.options.renderer
+          }).addTo(buildingsLayer);
         });
       });
+    }
+
+    map.on('moveend', () => {
+      // BUILDINGS
+      buildingsLayer.clearLayers();
+      if (chkBuildings.checked) {
+        fetchBuildings(getBoundingBox());
+      }
     });
-    
+      
+    // NEAREST
     let nearestMarker = null;
     map.on('click', e => {
       const { lat, lng } = e.latlng;

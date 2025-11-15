@@ -357,24 +357,36 @@ class KDSolution : public ISolution {
             auto end = std::chrono::high_resolution_clock::now();
             std::cout << "\tKDtree built " << get_duration(end - start) << std::endl;
 
-            std::cout << "\tInterpolating street names for buildings without a street assigned to them..." << std::endl;
-            start = std::chrono::high_resolution_clock::now();
-            const size_t total = _buildings.size();
-            for (size_t i = 0; i < total; i++) {
-                auto& building = _buildings[i];
-                if (building.street_idx) continue;
-
-                // Check if nearest building has a street name
-                std::optional<size_t> nearest_idx = _buildings_tree.find_nearest(building.location);
-                if (nearest_idx && _buildings[*nearest_idx].street_idx) {
-                    building.street_idx = _buildings[*nearest_idx].street_idx;
-                    std::cout << "\t\t" << i << " / " << total << std::endl;
+            pts.clear();
+            for (size_t i = 0; i < _streets.size(); ++i) {
+                for (auto& point : _streets[i].points) {
+                    pts.emplace_back(point, i);
                 }
-
-                // TODO: Otherwise find nearest street segment
             }
+            std::cout << "\tBuilding streets kdtree..." << std::endl;
+            start = std::chrono::high_resolution_clock::now();
+            _streets_tree.build(pts);
             end = std::chrono::high_resolution_clock::now();
-            std::cout << "\tStreet names assigned " << get_duration(end - start) << std::endl;
+            std::cout << "\tKDtree built " << get_duration(end - start) << std::endl;
+
+            // std::cout << "\tInterpolating street names for buildings without a street assigned to them..." << std::endl;
+            // start = std::chrono::high_resolution_clock::now();
+            // const size_t total = _buildings.size();
+            // for (size_t i = 0; i < total; i++) {
+            //     auto& building = _buildings[i];
+            //     if (building.street_idx) continue;
+
+            //     // Check if nearest building has a street name
+            //     std::optional<size_t> nearest_idx = _buildings_tree.find_nearest(building.location);
+            //     if (nearest_idx && _buildings[*nearest_idx].street_idx) {
+            //         building.street_idx = _buildings[*nearest_idx].street_idx;
+            //         std::cout << "\t\t" << i << " / " << total << std::endl;
+            //     }
+
+            //     // TODO: Otherwise find nearest street segment
+            // }
+            // end = std::chrono::high_resolution_clock::now();
+            // std::cout << "\tStreet names assigned " << get_duration(end - start) << std::endl;
         }
 
         void serialize(const std::string& path) const override {
@@ -389,6 +401,7 @@ class KDSolution : public ISolution {
         KDTree _buildings_tree;
         std::vector<Building> _buildings;
 
+        KDTree _streets_tree;
         std::vector<Street> _streets;
 
         std::vector<AdminArea> _admin_areas;
