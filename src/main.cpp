@@ -287,7 +287,8 @@ class KDSolution : public ISolution {
         }
 
         void add_admin_area(const char* name, std::vector<Point> boundary, uint8_t level) override {
-
+            if (!name) return;
+            _admin_areas.emplace_back(_string_store.get_or_add(name), boundary, level);
         }
 
         size_t num_buildings() const override {
@@ -299,7 +300,7 @@ class KDSolution : public ISolution {
         }
 
         size_t num_admin_areas() const override {
-            return 0;
+            return _admin_areas.size();
         }
 
         std::string get_buildings_in_view(double sw_lat, double sw_lon, double ne_lat, double ne_lon) const override {
@@ -390,12 +391,15 @@ class KDSolution : public ISolution {
 
         std::vector<Street> _streets;
 
+        std::vector<AdminArea> _admin_areas;
+
         friend class boost::serialization::access;
         template<class Archive>
         void serialize(Archive& ar, const unsigned int /*version*/) {
             ar & _string_store;
             ar & _buildings;
             ar & _streets;
+            ar & _admin_areas;
         }
 };
 
