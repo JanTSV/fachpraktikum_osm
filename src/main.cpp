@@ -312,7 +312,12 @@ class KDSolution : public ISolution {
             for (auto idx : buildings) {
                 if (!first) json << ",";
                 const Building& building = _buildings[idx];
-                json << "[" << building.location.x << "," << building.location.y << "]";
+                json << "[" 
+                     << building.location.x << "," 
+                     << building.location.y << ","
+                     << (building.street_idx ? "true" : "false") << ","
+                     << (building.house_number ? "true" : "false")
+                     << "]";
                 first = false;
             }
             json << "]";

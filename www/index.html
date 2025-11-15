@@ -98,10 +98,17 @@
       })
       .then(r => r.json())
       .then(points => {
-        points.forEach(([lat, lon]) => {
+        points.forEach(([lat, lon, has_street, has_house_number]) => {
+          let color = 'blue';
+          if (!has_street) {
+            color = 'grey';
+          } else if (!has_house_number) {
+            color = 'green';
+          }
+
           L.circleMarker([lat, lon], {
             radius: 2,
-            color: 'blue',
+            color: color,
             renderer: buildingsLayer.options.renderer
           }).addTo(buildingsLayer);
         });
