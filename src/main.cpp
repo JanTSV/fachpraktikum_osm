@@ -329,7 +329,7 @@ class KDSolution : public ISolution {
             for (size_t street_idx : streets) {
                 streets_in_view.insert(street_idx);
             }
-            
+
             bool first = true;
             for (size_t s : streets_in_view) {
                 const auto &street = _streets[s];
@@ -381,15 +381,16 @@ class KDSolution : public ISolution {
         }
 
         void preprocess() override {
+            // buildings kdtree
             std::vector<std::pair<Point, size_t>> pts;
             for (size_t i = 0; i < _buildings.size(); ++i) pts.emplace_back(_buildings[i].location, i);
-
             std::cout << "\tBuilding buildings kdtree..." << std::endl;
             auto start = std::chrono::high_resolution_clock::now();
             _buildings_tree.build(pts);
             auto end = std::chrono::high_resolution_clock::now();
             std::cout << "\tKDtree built " << get_duration(end - start) << std::endl;
 
+            // streets kdtree
             pts.clear();
             for (size_t i = 0; i < _streets.size(); ++i) {
                 for (auto& point : _streets[i].points) {
@@ -402,24 +403,30 @@ class KDSolution : public ISolution {
             end = std::chrono::high_resolution_clock::now();
             std::cout << "\tKDtree built " << get_duration(end - start) << std::endl;
 
-            // std::cout << "\tInterpolating street names for buildings without a street assigned to them..." << std::endl;
-            // start = std::chrono::high_resolution_clock::now();
-            // const size_t total = _buildings.size();
-            // for (size_t i = 0; i < total; i++) {
-            //     auto& building = _buildings[i];
-            //     if (building.street_idx) continue;
+            // interpolate house numbers
+            std::cout << "\tInterpolating street names for buildings without a street assigned to them..." << std::endl;
+            start = std::chrono::high_resolution_clock::now();
+            const size_t total = _buildings.size();
+            for (size_t i = 0; i < total; i++) {
+                auto& building = _buildings[i];
+                if (building.street_idx) continue;
 
-            //     // Check if nearest building has a street name
-            //     std::optional<size_t> nearest_idx = _buildings_tree.find_nearest(building.location);
-            //     if (nearest_idx && _buildings[*nearest_idx].street_idx) {
-            //         building.street_idx = _buildings[*nearest_idx].street_idx;
-            //         std::cout << "\t\t" << i << " / " << total << std::endl;
-            //     }
+                // Check if nearest building has a street name
+                std::optional<size_t> nearest_idx = _buildings_tree.find_nearest(building.location);
+                if (nearest_idx && _buildings[*nearest_idx].street_idx) {
+                    building.street_idx = _buildings[*nearest_idx].street_idx;
+                } else {
+                    // Otherwise find nearest street segment
+                    nearest_idx = _streets_tree.find_nearest(building.location);
+                    if (nearest_idx) {
+                        building.street_idx = _streets[*nearest_idx].name_idx;
+                    }
+                }
 
-            //     // TODO: Otherwise find nearest street segment
-            // }
-            // end = std::chrono::high_resolution_clock::now();
-            // std::cout << "\tStreet names assigned " << get_duration(end - start) << std::endl;
+                std::cout << "\t\t" << i << " / " << total << std::endl;
+            }
+            end = std::chrono::high_resolution_clock::now();
+            std::cout << "\tStreet names assigned " << get_duration(end - start) << std::endl;
         }
 
         void serialize(const std::string& path) const override {
