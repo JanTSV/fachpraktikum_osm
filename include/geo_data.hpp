@@ -78,12 +78,20 @@ public:
     AdminArea();
     AdminArea(size_t name_idx, std::vector<Point> boundary, uint8_t level);
 
+    bool point_in_polygon(const Point& p) const;
+
 private:
+    // Bounding box
+    Point _bl;
+    Point _tr;
+
     friend class boost::serialization::access;
     template<class Archive>
     void serialize(Archive& ar, const unsigned int /*version*/) {
         ar & name_idx;
         ar & boundary;
         ar & level;
+        ar & _bl;
+        ar & _tr;
     }
 };

@@ -370,7 +370,15 @@ class KDSolution : public ISolution {
             json << "\"lon\":" << building.location.y << ",";
 
             if (building.street_idx) {
-                json << "\"street\":\"" << _string_store.get(*building.street_idx) << "\",";
+                json << "\"street\":\"" << _string_store.get(*building.street_idx);
+
+                // TODO: point in areas should be in preprocessing
+                for (auto& area : _admin_areas) {
+                    if (area.point_in_polygon(building.location)) {
+                        json << _string_store.get(area.name_idx) << ", ";
+                    }
+                }
+                json << "\",";
             } else {
                 json << "\"street\":null,";
             }
