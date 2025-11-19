@@ -416,7 +416,7 @@ class KDSolution : public ISolution {
             end = std::chrono::high_resolution_clock::now();
             std::cout << "\tKDtree built " << get_duration(end - start) << std::endl;
 
-            // interpolate house numbers
+            // interpolate street names
             std::cout << "\tInterpolating street names for buildings without a street assigned to them..." << std::endl;
             start = std::chrono::high_resolution_clock::now();
             const size_t total = _buildings.size();
@@ -436,7 +436,7 @@ class KDSolution : public ISolution {
                     }
                 }
 
-                std::cout << "\t\t" << i << " / " << total << std::endl;
+                // std::cout << "\t\t" << i << " / " << total << std::endl;
             }
             end = std::chrono::high_resolution_clock::now();
             std::cout << "\tStreet names assigned " << get_duration(end - start) << std::endl;

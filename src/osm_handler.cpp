@@ -63,27 +63,7 @@ void OSMHandler::node(const osmium::Node& node) {
 void OSMHandler::way(const osmium::Way& way) {
     const osmium::TagList& tags = way.tags();
 
-    if (is_building(tags)) {
-        if (!way.is_closed()) return;
-
-        double sum_lat = 0.0, sum_lon = 0.0;
-        size_t count = 0;
-        const auto& nodes = way.nodes();
-
-        for (size_t i = 1; i < nodes.size(); ++i) {
-            const auto& node_ref = nodes[i];
-            if (node_ref.location().valid()) {
-                sum_lat += node_ref.location().lat();
-                sum_lon += node_ref.location().lon();
-                ++count;
-            }
-        }
-
-        if (count > 0) {
-            _solution.add_building(sum_lat / count, sum_lon / count,
-                                   get_street_name(tags), get_house_number(tags));
-        }
-    } else if (is_street(tags)) {
+    if (is_street(tags)) {
         const char* name = get_name(tags);
         if (!name) return;
 
@@ -95,25 +75,6 @@ void OSMHandler::way(const osmium::Way& way) {
         }
 
         _solution.add_street(name, std::move(points));
-    } else if (is_admin_area(tags)) {
-        const char* name = get_name(tags);
-        if (!name) return;
-
-        uint8_t level = 0;
-        if (tags["admin_level"]) {
-            level = std::stoi(tags["admin_level"]);
-        }
-
-        std::vector<Point> points;
-        for (const auto& node_ref : way.nodes()) {
-            if (node_ref.location().valid()) {
-                points.emplace_back(node_ref.location().lat(), node_ref.location().lon());
-            }
-        }
-
-        if (!points.empty()) {
-            _solution.add_admin_area(name, std::move(points), level);
-        }
     }
 }
 
@@ -121,18 +82,13 @@ void OSMHandler::area(const osmium::Area& area) {
     const osmium::TagList& tags = area.tags();
 
     if (is_building(tags)) {
-        double sum_lat = 0.0, sum_lon = 0.0;
-        size_t count = 0;
-        for (const auto& nr : *area.cbegin<osmium::OuterRing>()) {
-            if (nr.location().valid()) {
-                sum_lat += nr.lon();
-                sum_lon += nr.lat();
-                ++count;
-            }
-        }
+        const auto& rings = area.outer_rings();
+        if (rings.empty()) return;
+        const osmium::OuterRing& ring = *rings.begin();
+        std::optional<Point> centroid = compute_centroid(ring);
 
-        if (count > 0) {
-            _solution.add_building(sum_lat / count, sum_lon / count,
+        if (centroid) {
+            _solution.add_building((*centroid).x, (*centroid).y,
                                    get_street_name(tags), get_house_number(tags));
         }
     } else if (is_admin_area(tags)) {
@@ -145,9 +101,9 @@ void OSMHandler::area(const osmium::Area& area) {
         }
 
         std::vector<Point> points;
-        for (const auto& nr : *area.cbegin<osmium::OuterRing>()) {
-            if (nr.location().valid()) {
-                points.emplace_back(nr.location().lat(), nr.location().lon());
+        for (const auto& p : *area.cbegin<osmium::OuterRing>()) {
+            if (p.location().valid()) {
+                points.emplace_back(p.lat(), p.lon());
             }
         }
 
@@ -155,4 +111,17 @@ void OSMHandler::area(const osmium::Area& area) {
             _solution.add_admin_area(name, std::move(points), level);
         }
     }
+}
+
+std::optional<Point> OSMHandler::compute_centroid(const osmium::OuterRing& ring) {
+    double sum_lat = 0.0, sum_lon = 0.0;
+    size_t count = 0;
+    for (size_t i = 0; i < ring.size(); ++i) {
+        if (!ring[i].location().valid()) continue;
+        sum_lat += ring[i].lat();
+        sum_lon += ring[i].lon();
+        ++count;
+    }
+    if (count == 0) return std::nullopt;
+    return Point(sum_lat / count, sum_lon / count);
 }
