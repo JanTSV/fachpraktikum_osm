@@ -165,7 +165,7 @@
 
         // Add marker
         let popupText = "";
-        if (data.street) popupText += data.street;
+        if (data.address) popupText += data.address;
         if (data.house_number) popupText += " " + data.house_number;
 
         nearestMarker = L.circleMarker([data.lat, data.lon], { radius: 5, color: 'red' })

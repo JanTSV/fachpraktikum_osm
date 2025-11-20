@@ -11,6 +11,8 @@
 
 using HouseNumber = uint16_t;
 
+static constexpr double R = 6378137.0;
+
 struct Point {
 public:
     double x;
@@ -23,6 +25,8 @@ public:
     const double& operator[](size_t idx) const;
 
     double euclidean_distance(const Point& other) const;
+
+    static Point project_mercator(double lat, double lon);
 
 private:
     friend class boost::serialization::access;
@@ -38,6 +42,7 @@ public:
     Point location;
     std::optional<size_t> street_idx;
     std::optional<HouseNumber> house_number;
+    std::vector<size_t> address;
 
     Building();
     Building(Point location, std::optional<size_t> street_idx, std::optional<HouseNumber> house_number);
@@ -49,6 +54,7 @@ private:
         ar & location;
         ar & street_idx;
         ar & house_number;
+        ar & address;
     }
 };
 

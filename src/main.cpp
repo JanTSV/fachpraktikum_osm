@@ -289,11 +289,10 @@ class KDSolution : public ISolution {
         void add_admin_area(const char* name, std::vector<Point> boundary, uint8_t level) override {
             if (!name) return;
             AdminArea area(_string_store.get_or_add(name), boundary, level);
-            const double lat_rad = (area.tr.x + area.bl.x) / 2.0 * M_PI / 180.0;
-            const double half_lat = (area.tr.x - area.bl.x) / 2.0;
-            const double half_lon = (area.tr.y - area.bl.y) / 2.0 * std::cos(lat_rad);
-            _areas_max_half_width  = std::max(_areas_max_half_width, half_lat);
-            _areas_max_half_height = std::max(_areas_max_half_height, half_lon);
+            double half_width = (area.tr.x - area.bl.x) / 2.0;
+            double half_height = (area.tr.y - area.bl.y) / 2.0;
+            _areas_max_half_width  = std::max(_areas_max_half_width, half_width);
+            _areas_max_half_height = std::max(_areas_max_half_height, half_height);
             _admin_areas.emplace_back(area);
         }
 
@@ -375,19 +374,16 @@ class KDSolution : public ISolution {
             json << "\"lat\":" << building.location.x << ",";
             json << "\"lon\":" << building.location.y << ",";
 
-            if (building.street_idx) {
-                json << "\"street\":\"" << _string_store.get(*building.street_idx);
-
-                // TODO: point in areas should be in preprocessing
-                for (auto& area : _admin_areas) {
-                    if (area.point_in_polygon(building.location)) {
-                        json << _string_store.get(area.name_idx) << ", ";
-                    }
-                }
-                json << "\",";
-            } else {
-                json << "\"street\":null,";
+            json << "\"address\":\"";
+            for (size_t a : building.address) {
+                const AdminArea& area = _admin_areas[a];
+                json << _string_store.get(area.name_idx) << ", ";
             }
+
+            if (building.street_idx) {
+                json << _string_store.get(*building.street_idx);
+            }
+            json << "\",";
 
             if (building.house_number) {
                 json << "\"house_number\":\"" << *building.house_number << "\"";
@@ -413,14 +409,15 @@ class KDSolution : public ISolution {
             auto end = std::chrono::high_resolution_clock::now();
             std::cout << "\tSorted admin areas " << get_duration(end - start) << std::endl;
 
+            std::vector<std::pair<Point, size_t>> pts;
+            
             // admin areas kdtree
             KDTree areas_tree;
-            std::vector<std::pair<Point, size_t>> pts;
             std::cout << "\tBuilding admin areas kdtree..." << std::endl;
             start = std::chrono::high_resolution_clock::now();
             for (size_t i = 0; i < _admin_areas.size(); i++) {
                 const auto& area = _admin_areas[i];
-                Point center((area.bl.x + area.tr.x)/2, (area.bl.y + area.tr.y)/2);
+                Point center((area.bl.x + area.tr.x) / 2.0, (area.bl.y + area.tr.y) / 2.0);
                 pts.emplace_back(center, i);
             }
             areas_tree.build(pts);
@@ -432,14 +429,16 @@ class KDSolution : public ISolution {
             std::cout << "\tPoint in polygon test for buildings..." << std::endl;
             start = std::chrono::high_resolution_clock::now();
             for (size_t i = 0; i < _buildings.size(); ++i) {
-                const Point& p = _buildings[i].location;
+                Building& building = _buildings[i];
+                const Point& p = building.location;
+                const Point& projected = Point::project_mercator(p.x, p.y);
                 pts.emplace_back(p, i);
 
                 std::vector<size_t> area_candidates = areas_tree.range_search(
-                    p.x - _areas_max_half_width, 
-                    p.y - _areas_max_half_height, 
-                    p.x + _areas_max_half_width, 
-                    p.y + _areas_max_half_height);
+                    projected.x - _areas_max_half_width, 
+                    projected.y - _areas_max_half_height, 
+                    projected.x + _areas_max_half_width, 
+                    projected.y + _areas_max_half_height);
 
                 std::sort(
                     area_candidates.begin(),
@@ -449,39 +448,45 @@ class KDSolution : public ISolution {
                     }
                 );
 
-                size_t last = std::numeric_limits<size_t>::max();
+                uint8_t last_lvl = std::numeric_limits<uint8_t>::max();
                 for (const size_t a : area_candidates) {
-                    if (a == last) continue;
+                    const AdminArea& area = _admin_areas[a];
+                    if (area.level == last_lvl) continue;
 
-                    if (_admin_areas[a].point_in_polygon(p)) {
-
+                    if (area.point_in_polygon(p)) {
+                        building.address.push_back(a);
+                        last_lvl = area.level;
                     }
-
-                    last = a;
                 }
                 
 
-                std::cout << "PiP: " << i << " / " << _buildings.size() << std::endl;
-            }
-
-            return;
-
-            // Point in polygon for each building
-            pts.clear();
-            std::cout << "\tPoint in polygon test for buildings..." << std::endl;
-            start = std::chrono::high_resolution_clock::now();
-            for (size_t i = 0; i < _buildings.size(); ++i) {
-                const Point& p = _buildings[i].location;
-                pts.emplace_back(p, i);
-
-                for (const auto& area : _admin_areas) {
-                    if (area.point_in_polygon(p)) {
-                        // std::cout << "HOORAY" << std::endl;
-                    }
-                }
-
                 // std::cout << "PiP: " << i << " / " << _buildings.size() << std::endl;
             }
+            end = std::chrono::high_resolution_clock::now();
+            std::cout << "\tAssigned areas to buldings " << get_duration(end - start) << std::endl;
+
+            // // Point in polygon for each building
+            // pts.clear();
+            // std::cout << "\tPoint in polygon test for buildings..." << std::endl;
+            // start = std::chrono::high_resolution_clock::now();
+            // for (size_t i = 0; i < _buildings.size(); ++i) {
+            //     Building& building = _buildings[i];
+            //     const Point& p = building.location;
+            //     pts.emplace_back(p, i);
+
+            //     uint8_t last_lvl = std::numeric_limits<uint8_t>::max();
+            //     for (size_t a = 0; a < _admin_areas.size(); a++) {
+            //         const AdminArea& area = _admin_areas[a];
+            //         if (area.level == last_lvl) continue;
+
+            //         if (area.point_in_polygon(p)) {
+            //             building.address.push_back(a);
+            //             last_lvl = area.level;
+            //         }
+            //     }
+
+            //     // std::cout << "PiP: " << i << " / " << _buildings.size() << std::endl;
+            // }
 
             end = std::chrono::high_resolution_clock::now();
             std::cout << "\tAssigned areas to buldings " << get_duration(end - start) << std::endl;
