@@ -209,6 +209,19 @@ class KDTree {
                 Node() = default;
                 Node(Point point, size_t idx, size_t left, size_t right, uint8_t axis, Point bl, Point tr)
                     : point(point), idx(idx), left(left), right(right), axis(axis), bl(bl), tr(tr) { }
+
+            private:
+                friend class boost::serialization::access;
+                template<class Archive>
+                void serialize(Archive& ar, const unsigned int /*version*/) {
+                    ar & point;
+                    ar & idx;
+                    ar & left;
+                    ar & right;
+                    ar & bl;
+                    ar & tr;
+                    ar & axis;
+                }
         };
 
         std::vector<Node> _nodes;
@@ -264,6 +277,12 @@ class KDTree {
             else if (p.y > n.tr.y) dy = p.y - n.tr.y;
 
             return dx * dx + dy * dy;
+        }
+
+        friend class boost::serialization::access;
+        template<class Archive>
+        void serialize(Archive& ar, const unsigned int /*version*/) {
+            ar & _nodes;
         }
 };
 
@@ -396,32 +415,18 @@ class KDSolution : public ISolution {
         }
 
         void preprocess() override {
-            // sort admin areas
-            std::cout << "\tSorting admin areas by level..." << std::endl;
-            auto start = std::chrono::high_resolution_clock::now();
-            std::sort(
-                _admin_areas.begin(),
-                _admin_areas.end(),
-                [](const AdminArea &a, const AdminArea &b) {
-                    return a.level < b.level;
-                }
-            );
-            auto end = std::chrono::high_resolution_clock::now();
-            std::cout << "\tSorted admin areas " << get_duration(end - start) << std::endl;
-
             std::vector<std::pair<Point, size_t>> pts;
             
             // admin areas kdtree
-            KDTree areas_tree;
             std::cout << "\tBuilding admin areas kdtree..." << std::endl;
-            start = std::chrono::high_resolution_clock::now();
+            auto start = std::chrono::high_resolution_clock::now();
             for (size_t i = 0; i < _admin_areas.size(); i++) {
                 const auto& area = _admin_areas[i];
                 Point center((area.bl.x + area.tr.x) / 2.0, (area.bl.y + area.tr.y) / 2.0);
                 pts.emplace_back(center, i);
             }
-            areas_tree.build(pts);
-            end = std::chrono::high_resolution_clock::now();
+            _admin_areas_tree.build(pts);
+            auto end = std::chrono::high_resolution_clock::now();
             std::cout << "\tKDtree built " << get_duration(end - start) << std::endl;
 
             // Point in polygon for each building
@@ -434,7 +439,7 @@ class KDSolution : public ISolution {
                 const Point& projected = Point::project_mercator(p.x, p.y);
                 pts.emplace_back(p, i);
 
-                std::vector<size_t> area_candidates = areas_tree.range_search(
+                std::vector<size_t> area_candidates = _admin_areas_tree.range_search(
                     projected.x - _areas_max_half_width, 
                     projected.y - _areas_max_half_height, 
                     projected.x + _areas_max_half_width, 
@@ -487,9 +492,8 @@ class KDSolution : public ISolution {
 
             //     // std::cout << "PiP: " << i << " / " << _buildings.size() << std::endl;
             // }
-
-            end = std::chrono::high_resolution_clock::now();
-            std::cout << "\tAssigned areas to buldings " << get_duration(end - start) << std::endl;
+            // end = std::chrono::high_resolution_clock::now();
+            // std::cout << "\tAssigned areas to buldings " << get_duration(end - start) << std::endl;
 
             // buildings kdtree
             std::cout << "\tBuilding buildings kdtree..." << std::endl;
@@ -552,6 +556,7 @@ class KDSolution : public ISolution {
         KDTree _streets_tree;
         std::vector<Street> _streets;
 
+        KDTree _admin_areas_tree;
         std::vector<AdminArea> _admin_areas;
 
         double _areas_max_half_width = 0.0;
@@ -561,8 +566,11 @@ class KDSolution : public ISolution {
         template<class Archive>
         void serialize(Archive& ar, const unsigned int /*version*/) {
             ar & _string_store;
+            ar & _buildings_tree;
             ar & _buildings;
+            ar & _streets_tree;
             ar & _streets;
+            ar & _admin_areas_tree;
             ar & _admin_areas;
         }
 };
@@ -652,7 +660,18 @@ int main(int argc, char* argv[]) {
     std::cout << "Number of streets: " << solution.num_streets() << std::endl;
     std::cout << "Number of admin areas: " << solution.num_admin_areas() << std::endl;
 
-    // Serialize solution if argument is set
+    if (!configuration.in_binary_file) {
+        // Preprocessing (only for raw OSM data)
+        std::cout << "Preprocessing..." << std::endl;
+        auto start_prep = std::chrono::high_resolution_clock::now();
+
+        solution.preprocess();
+
+        auto end_prep = std::chrono::high_resolution_clock::now();
+        std::cout << "Preprocessing done " << get_duration(end_prep - start_prep) << std::endl;
+    }
+
+    // Serialize preprocessed solution if argument is set
     if (configuration.out_binary_file) {
         std::cout << "Serializing to " << *configuration.out_binary_file << "..." << std::endl;
         auto start_ser = std::chrono::high_resolution_clock::now();
@@ -661,16 +680,7 @@ int main(int argc, char* argv[]) {
 
         auto end_ser = std::chrono::high_resolution_clock::now();
         std::cout << "Serialization done " << get_duration(end_ser - start_ser) << std::endl;
-    }
-
-    // Preprocessing
-    std::cout << "Preprocessing..." << std::endl;
-    auto start_prep = std::chrono::high_resolution_clock::now();
-
-    solution.preprocess();
-
-    auto end_prep = std::chrono::high_resolution_clock::now();
-    std::cout << "Preprocessing done " << get_duration(end_prep - start_prep) << std::endl;
+    }   
 
     httplib::Server svr;
     svr.set_mount_point("/", "./www");
