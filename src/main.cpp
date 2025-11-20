@@ -394,13 +394,44 @@ class KDSolution : public ISolution {
         }
 
         void preprocess() override {
-            // buildings kdtree
-            std::vector<std::pair<Point, size_t>> pts;
-            for (size_t i = 0; i < _buildings.size(); ++i) pts.emplace_back(_buildings[i].location, i);
-            std::cout << "\tBuilding buildings kdtree..." << std::endl;
+            // sort admin areas
+            std::cout << "\tSorting admin areas by level..." << std::endl;
             auto start = std::chrono::high_resolution_clock::now();
-            _buildings_tree.build(pts);
+            std::sort(
+                _admin_areas.begin(),
+                _admin_areas.end(),
+                [](const AdminArea &a, const AdminArea &b) {
+                    return a.level < b.level;
+                }
+            );
             auto end = std::chrono::high_resolution_clock::now();
+            std::cout << "\tSorted admin areas " << get_duration(end - start) << std::endl;
+
+            // Point in polygon for each building
+            std::cout << "\tPoint in polygon test for buildings..." << std::endl;
+            start = std::chrono::high_resolution_clock::now();
+            std::vector<std::pair<Point, size_t>> pts;
+            for (size_t i = 0; i < _buildings.size(); ++i) {
+                const Point& p = _buildings[i].location;
+                pts.emplace_back(p, i);
+
+                for (const auto& area : _admin_areas) {
+                    if (area.point_in_polygon(p)) {
+                        // std::cout << "HOORAY" << std::endl;
+                    }
+                }
+
+                std::cout << "PiP: " << i << " / " << _buildings.size() << std::endl;
+            }
+
+            end = std::chrono::high_resolution_clock::now();
+            std::cout << "\tAssigned areas to buldings " << get_duration(end - start) << std::endl;
+
+            // buildings kdtree
+            std::cout << "\tBuilding buildings kdtree..." << std::endl;
+            start = std::chrono::high_resolution_clock::now();
+            _buildings_tree.build(pts);
+            end = std::chrono::high_resolution_clock::now();
             std::cout << "\tKDtree built " << get_duration(end - start) << std::endl;
 
             // streets kdtree

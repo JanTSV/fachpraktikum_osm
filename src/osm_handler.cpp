@@ -3,6 +3,7 @@
 #include <cstring>
 #include <iostream>
 #include <charconv>
+#include <limits>
 
 OSMHandler::OSMHandler(ISolution& solution) : _solution(solution) { }
 
@@ -95,11 +96,21 @@ void OSMHandler::area(const osmium::Area& area) {
         const char* name = get_name(tags);
         if (!name) return;
 
-        uint8_t level = 0;
+        uint8_t level = std::numeric_limits<uint8_t>::max();
         if (tags["admin_level"]) {
-            level = std::stoi(tags["admin_level"]);
+            int lvl = std::stoi(tags["admin_level"]);
+            if (lvl >= std::numeric_limits<uint8_t>::min() && lvl <= std::numeric_limits<uint8_t>::max()) {
+                level = static_cast<uint8_t>(lvl);
+            }
+            else {
+                std::cout << "WARNING: LEVEL OUT OF RANGE " << lvl << std::endl;
+                return;
+            }
+        } else {
+            // Skip areas without a level.
+            return;
         }
-
+        
         std::vector<Point> points;
         for (const auto& p : *area.cbegin<osmium::OuterRing>()) {
             if (p.location().valid()) {
