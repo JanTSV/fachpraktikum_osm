@@ -132,6 +132,23 @@
       });
     }
 
+    function fetchAdminAreas(payload) {
+      fetch('/admin_areas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      .then(r => r.json())
+      .then(admin_areas => {
+        admin_areas.forEach(admin_area => {
+          const latlngs = admin_area.points.map(p => [p[0], p[1]]);
+          L.polygon(latlngs, { color: 'red', weight: 2, fillOpacity: 0 })
+            .addTo(adminLayer)
+            .bindPopup(admin_area.name);
+        });
+      });
+    }
+
     map.on('moveend', () => {
       // BUILDINGS
       buildingsLayer.clearLayers();
@@ -143,6 +160,12 @@
       streetsLayer.clearLayers();
       if (chkStreets.checked) {
         fetchStreets(getBoundingBox());
+      }
+
+      // ADMIN AREAS
+      adminLayer.clearLayers();
+      if (chkAdmins.checked) {
+        fetchAdminAreas(getBoundingBox());
       }
     });
       

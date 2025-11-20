@@ -382,6 +382,45 @@ class KDSolution : public ISolution {
             return json.str();
         }
 
+        std::string get_admin_areas_in_view(double sw_lat, double sw_lon, double ne_lat, double ne_lon) const override {
+            std::ostringstream json;
+            json << "[";
+
+            Point projected_bl = Point::project_mercator(sw_lat, sw_lon);
+            Point projected_tr = Point::project_mercator(ne_lat, ne_lon);
+            std::vector<size_t> areas = _admin_areas_tree.range_search(
+                projected_bl.x - _areas_max_half_width, 
+                projected_bl.y - _areas_max_half_height, 
+                projected_tr.x + _areas_max_half_width, 
+                projected_tr.y + _areas_max_half_height);
+            std::unordered_set<size_t> areas_in_view;
+            for (size_t area_idx : areas) {
+                areas_in_view.insert(area_idx);
+            }
+
+            bool first = true;
+            for (size_t a : areas_in_view) {
+                const auto &area = _admin_areas[a];
+
+                if (!first) json << ",";
+                first = false;
+
+                json << "{\"name\":\""
+                    << _string_store.get(area.name_idx)
+                    << "\",\"points\":[";
+
+                for (size_t i = 0; i < area.boundary.size(); i++) {
+                    json << "[" << area.boundary[i].x << "," << area.boundary[i].y << "]";
+                    if (i + 1 < area.boundary.size()) json << ",";
+                }
+
+                json << "]}";
+            }
+            
+            json << "]";
+            return json.str();
+        }
+
         std::string get_nearest_building(double lat, double lon) const {
             Point target(lat, lon);
             auto nearest_building = _buildings_tree.find_nearest(target);
@@ -723,6 +762,26 @@ int main(int argc, char* argv[]) {
 
         res.status = 200;
         res.set_content(solution.get_streets_in_view(sw_lat, sw_lon, ne_lat, ne_lon), "application/json");
+    });
+
+    // API endpoint for admin areas
+    svr.Post("/admin_areas", [&solution](const httplib::Request &req, httplib::Response &res) {
+        // Read viewport boundary
+        double sw_lat, sw_lon, ne_lat, ne_lon;
+        bool ok = (sscanf(
+            req.body.c_str(),
+            R"({"swLat":%lf,"swLon":%lf,"neLat":%lf,"neLon":%lf})",
+            &sw_lat, &sw_lon, &ne_lat, &ne_lon
+        ) == 4);
+
+        if (!ok) {
+            res.status = 400;
+            res.set_content("Invalid JSON format", "text/plain");
+            return;
+        }
+
+        res.status = 200;
+        res.set_content(solution.get_admin_areas_in_view(sw_lat, sw_lon, ne_lat, ne_lon), "application/json");
     });
 
     // API endpoint for reverse geocoder
