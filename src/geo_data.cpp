@@ -32,7 +32,7 @@ Street::Street() : name_idx(0), points() { }
 Street::Street(size_t name_idx, std::vector<Point> points)
     : name_idx(name_idx), points(points) { }
 
-AdminArea::AdminArea() : name_idx(0), boundary(), level(0), _bl(Point()), _tr(Point()) { }
+AdminArea::AdminArea() : name_idx(0), boundary(), level(0), _bl(Point()), _tr(Point()), _projected_boundary() { }
 
 static constexpr double R = 6378137.0;
 
@@ -58,6 +58,9 @@ AdminArea::AdminArea(size_t name_idx, std::vector<Point> boundary, uint8_t level
         return;
     }
 
+    _projected_boundary.clear();
+    _projected_boundary.reserve(boundary.size());
+
     _bl = project_mercator(this->boundary[0].x, this->boundary[0].y);
     _tr = project_mercator(this->boundary[0].x, this->boundary[0].y);
 
@@ -67,6 +70,7 @@ AdminArea::AdminArea(size_t name_idx, std::vector<Point> boundary, uint8_t level
         if (projected.y < _bl.y) _bl.y = projected.y;
         if (projected.x > _tr.x) _tr.x = projected.x;
         if (projected.y > _tr.y) _tr.y = projected.y;
+        _projected_boundary.push_back(projected);
     }
 }
 
@@ -75,11 +79,11 @@ bool AdminArea::point_in_polygon(const Point& p) const {
     if (projected.x < _bl.x || projected.x > _tr.x || projected.y < _bl.y || projected.y > _tr.y) return false;
 
      bool inside = false;
-     const size_t n = boundary.size();
+     const size_t n = _projected_boundary.size();
 
     for (size_t i = 0, j = n - 1; i < n; j = i++) {
-        const Point pi = project_mercator(boundary[i].x, boundary[i].y);
-        const Point pj = project_mercator(boundary[j].x, boundary[j].y);
+        const Point pi = _projected_boundary[i];
+        const Point pj = _projected_boundary[j];
         if (((pi.y > projected.y) != (pj.y > projected.y)) &&
             (projected.x < (pj.x - pi.x) * (projected.y - pi.y) / (pj.y - pi.y) + pi.x))
         {

@@ -85,6 +85,8 @@ private:
     Point _bl;
     Point _tr;
 
+    std::vector<Point> _projected_boundary;
+
     friend class boost::serialization::access;
     template<class Archive>
     void serialize(Archive& ar, const unsigned int /*version*/) {
@@ -93,5 +95,6 @@ private:
         ar & level;
         ar & _bl;
         ar & _tr;
+        ar & _projected_boundary;
     }
 };
