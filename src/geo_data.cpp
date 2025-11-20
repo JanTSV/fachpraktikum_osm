@@ -34,6 +34,22 @@ Street::Street(size_t name_idx, std::vector<Point> points)
 
 AdminArea::AdminArea() : name_idx(0), boundary(), level(0), _bl(Point()), _tr(Point()) { }
 
+static constexpr double R = 6378137.0;
+
+inline Point project_mercator(double lat, double lon)
+{
+    double x = R * lon * M_PI / 180.0;
+
+    double lat_rad = lat * M_PI / 180.0;
+    constexpr double max_lat_rad = 1.48352986419518;
+    if (lat_rad > max_lat_rad) lat_rad = max_lat_rad;
+    if (lat_rad < -max_lat_rad) lat_rad = -max_lat_rad;
+
+    double y = R * std::log(std::tan(M_PI / 4.0 + lat_rad / 2.0));
+    return Point(x, y);
+}
+
+
 AdminArea::AdminArea(size_t name_idx, std::vector<Point> boundary, uint8_t level)
     : name_idx(name_idx), boundary(boundary), level(level) {
     
@@ -42,33 +58,30 @@ AdminArea::AdminArea(size_t name_idx, std::vector<Point> boundary, uint8_t level
         return;
     }
 
-    double min_x = this->boundary[0].x;
-    double min_y = this->boundary[0].y;
-    double max_x = this->boundary[0].x;
-    double max_y = this->boundary[0].y;
+    _bl = project_mercator(this->boundary[0].x, this->boundary[0].y);
+    _tr = project_mercator(this->boundary[0].x, this->boundary[0].y);
 
     for (const auto& p : this->boundary) {
-        if (p.x < min_x) min_x = p.x;
-        if (p.y < min_y) min_y = p.y;
-        if (p.x > max_x) max_x = p.x;
-        if (p.y > max_y) max_y = p.y;
+        const Point projected = project_mercator(p.x, p.y);
+        if (projected.x < _bl.x) _bl.x = projected.x;
+        if (projected.y < _bl.y) _bl.y = projected.y;
+        if (projected.x > _tr.x) _tr.x = projected.x;
+        if (projected.y > _tr.y) _tr.y = projected.y;
     }
-
-    _bl = Point(min_x, min_y);
-    _tr = Point(max_x, max_y);
 }
 
 bool AdminArea::point_in_polygon(const Point& p) const {
-    if (p.x < _bl.x || p.x > _tr.x || p.y < _bl.y || p.y > _tr.y) return false;
+    const Point projected = project_mercator(p.x, p.y);
+    if (projected.x < _bl.x || projected.x > _tr.x || projected.y < _bl.y || projected.y > _tr.y) return false;
 
      bool inside = false;
      const size_t n = boundary.size();
 
     for (size_t i = 0, j = n - 1; i < n; j = i++) {
-        const Point& pi = boundary[i];
-        const Point& pj = boundary[j];
-        if (((pi.y > p.y) != (pj.y > p.y)) &&
-            (p.x < (pj.x - pi.x) * (p.y - pi.y) / (pj.y - pi.y) + pi.x))
+        const Point pi = project_mercator(boundary[i].x, boundary[i].y);
+        const Point pj = project_mercator(boundary[j].x, boundary[j].y);
+        if (((pi.y > projected.y) != (pj.y > projected.y)) &&
+            (projected.x < (pj.x - pi.x) * (projected.y - pi.y) / (pj.y - pi.y) + pi.x))
         {
             inside = !inside;
         }
