@@ -32,7 +32,7 @@ Street::Street() : name_idx(0), points() { }
 Street::Street(size_t name_idx, std::vector<Point> points)
     : name_idx(name_idx), points(points) { }
 
-AdminArea::AdminArea() : name_idx(0), boundary(), level(0), _bl(Point()), _tr(Point()), _projected_boundary() { }
+AdminArea::AdminArea() : name_idx(0), boundary(), level(0), bl(Point()), tr(Point()), _projected_boundary() { }
 
 static constexpr double R = 6378137.0;
 
@@ -54,29 +54,29 @@ AdminArea::AdminArea(size_t name_idx, std::vector<Point> boundary, uint8_t level
     : name_idx(name_idx), boundary(boundary), level(level) {
     
     if (this->boundary.empty()) {
-        _bl = _tr = Point(0, 0);
+        bl = tr = Point(0, 0);
         return;
     }
 
     _projected_boundary.clear();
     _projected_boundary.reserve(boundary.size());
 
-    _bl = project_mercator(this->boundary[0].x, this->boundary[0].y);
-    _tr = project_mercator(this->boundary[0].x, this->boundary[0].y);
+    bl = project_mercator(this->boundary[0].x, this->boundary[0].y);
+    tr = project_mercator(this->boundary[0].x, this->boundary[0].y);
 
     for (const auto& p : this->boundary) {
         const Point projected = project_mercator(p.x, p.y);
-        if (projected.x < _bl.x) _bl.x = projected.x;
-        if (projected.y < _bl.y) _bl.y = projected.y;
-        if (projected.x > _tr.x) _tr.x = projected.x;
-        if (projected.y > _tr.y) _tr.y = projected.y;
+        if (projected.x < bl.x) bl.x = projected.x;
+        if (projected.y < bl.y) bl.y = projected.y;
+        if (projected.x > tr.x) tr.x = projected.x;
+        if (projected.y > tr.y) tr.y = projected.y;
         _projected_boundary.push_back(projected);
     }
 }
 
 bool AdminArea::point_in_polygon(const Point& p) const {
     const Point projected = project_mercator(p.x, p.y);
-    if (projected.x < _bl.x || projected.x > _tr.x || projected.y < _bl.y || projected.y > _tr.y) return false;
+    if (projected.x < bl.x || projected.x > tr.x || projected.y < bl.y || projected.y > tr.y) return false;
 
      bool inside = false;
      const size_t n = _projected_boundary.size();

@@ -288,7 +288,13 @@ class KDSolution : public ISolution {
 
         void add_admin_area(const char* name, std::vector<Point> boundary, uint8_t level) override {
             if (!name) return;
-            _admin_areas.emplace_back(_string_store.get_or_add(name), boundary, level);
+            AdminArea area(_string_store.get_or_add(name), boundary, level);
+            const double lat_rad = (area.tr.x + area.bl.x) / 2.0 * M_PI / 180.0;
+            const double half_lat = (area.tr.x - area.bl.x) / 2.0;
+            const double half_lon = (area.tr.y - area.bl.y) / 2.0 * std::cos(lat_rad);
+            _areas_max_half_width  = std::max(_areas_max_half_width, half_lat);
+            _areas_max_half_height = std::max(_areas_max_half_height, half_lon);
+            _admin_areas.emplace_back(area);
         }
 
         size_t num_buildings() const override {
@@ -407,10 +413,63 @@ class KDSolution : public ISolution {
             auto end = std::chrono::high_resolution_clock::now();
             std::cout << "\tSorted admin areas " << get_duration(end - start) << std::endl;
 
+            // admin areas kdtree
+            KDTree areas_tree;
+            std::vector<std::pair<Point, size_t>> pts;
+            std::cout << "\tBuilding admin areas kdtree..." << std::endl;
+            start = std::chrono::high_resolution_clock::now();
+            for (size_t i = 0; i < _admin_areas.size(); i++) {
+                const auto& area = _admin_areas[i];
+                Point center((area.bl.x + area.tr.x)/2, (area.bl.y + area.tr.y)/2);
+                pts.emplace_back(center, i);
+            }
+            areas_tree.build(pts);
+            end = std::chrono::high_resolution_clock::now();
+            std::cout << "\tKDtree built " << get_duration(end - start) << std::endl;
+
             // Point in polygon for each building
+            pts.clear();
             std::cout << "\tPoint in polygon test for buildings..." << std::endl;
             start = std::chrono::high_resolution_clock::now();
-            std::vector<std::pair<Point, size_t>> pts;
+            for (size_t i = 0; i < _buildings.size(); ++i) {
+                const Point& p = _buildings[i].location;
+                pts.emplace_back(p, i);
+
+                std::vector<size_t> area_candidates = areas_tree.range_search(
+                    p.x - _areas_max_half_width, 
+                    p.y - _areas_max_half_height, 
+                    p.x + _areas_max_half_width, 
+                    p.y + _areas_max_half_height);
+
+                std::sort(
+                    area_candidates.begin(),
+                    area_candidates.end(),
+                    [this](const size_t a, const size_t b) {
+                        return _admin_areas[a].level < _admin_areas[b].level;
+                    }
+                );
+
+                size_t last = std::numeric_limits<size_t>::max();
+                for (const size_t a : area_candidates) {
+                    if (a == last) continue;
+
+                    if (_admin_areas[a].point_in_polygon(p)) {
+
+                    }
+
+                    last = a;
+                }
+                
+
+                std::cout << "PiP: " << i << " / " << _buildings.size() << std::endl;
+            }
+
+            return;
+
+            // Point in polygon for each building
+            pts.clear();
+            std::cout << "\tPoint in polygon test for buildings..." << std::endl;
+            start = std::chrono::high_resolution_clock::now();
             for (size_t i = 0; i < _buildings.size(); ++i) {
                 const Point& p = _buildings[i].location;
                 pts.emplace_back(p, i);
@@ -421,7 +480,7 @@ class KDSolution : public ISolution {
                     }
                 }
 
-                std::cout << "PiP: " << i << " / " << _buildings.size() << std::endl;
+                // std::cout << "PiP: " << i << " / " << _buildings.size() << std::endl;
             }
 
             end = std::chrono::high_resolution_clock::now();
@@ -489,6 +548,9 @@ class KDSolution : public ISolution {
         std::vector<Street> _streets;
 
         std::vector<AdminArea> _admin_areas;
+
+        double _areas_max_half_width = 0.0;
+        double _areas_max_half_height = 0.0;
 
         friend class boost::serialization::access;
         template<class Archive>

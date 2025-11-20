@@ -73,6 +73,8 @@ struct AdminArea {
 public:
     size_t name_idx;
     std::vector<Point> boundary;
+    Point bl;  // Bounding box
+    Point tr;
     uint8_t level;
 
     AdminArea();
@@ -81,9 +83,6 @@ public:
     bool point_in_polygon(const Point& p) const;
 
 private:
-    // Bounding box
-    Point _bl;
-    Point _tr;
 
     std::vector<Point> _projected_boundary;
 
@@ -93,8 +92,8 @@ private:
         ar & name_idx;
         ar & boundary;
         ar & level;
-        ar & _bl;
-        ar & _tr;
+        ar & bl;
+        ar & tr;
         ar & _projected_boundary;
     }
 };
