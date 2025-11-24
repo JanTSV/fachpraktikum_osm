@@ -494,7 +494,7 @@ class KDSolution : public ISolution {
                     const AdminArea& area = _admin_areas[a];
                     if (area.level == last_lvl) continue;
 
-                    if (area.point_in_polygon(p)) {
+                    if (area.point_in_polygon_fast(p)) {
                         address.push_back(a);
                         last_lvl = area.level;
                     }

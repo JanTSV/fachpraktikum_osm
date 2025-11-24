@@ -75,6 +75,25 @@ private:
     }
 };
 
+struct Edge {
+    public:
+        double y_min;
+        double y_max;
+        double x_at_y_min;
+        double inv_slope;
+
+
+private:
+    friend class boost::serialization::access;
+    template<class Archive>
+    void serialize(Archive& ar, const unsigned int /*version*/) {
+        ar & y_min;
+        ar & y_max;
+        ar & x_at_y_min;
+        ar & inv_slope;
+    }
+};
+
 struct AdminArea {
 public:
     size_t name_idx;
@@ -87,10 +106,12 @@ public:
     AdminArea(size_t name_idx, std::vector<Point> boundary, uint8_t level);
 
     bool point_in_polygon(const Point& p) const;
+    bool point_in_polygon_fast(const Point& p) const;
 
 private:
 
     std::vector<Point> _projected_boundary;
+    std::vector<Edge> _edges;
 
     friend class boost::serialization::access;
     template<class Archive>
@@ -101,5 +122,6 @@ private:
         ar & bl;
         ar & tr;
         ar & _projected_boundary;
+        ar & _edges;
     }
 };

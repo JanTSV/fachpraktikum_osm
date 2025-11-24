@@ -1,6 +1,7 @@
 #include "geo_data.hpp"
 
 #include <cmath>
+#include <cfloat>
 
 Point::Point() : x(0), y(0) { }
 
@@ -45,12 +46,13 @@ Street::Street() : name_idx(0), points() { }
 Street::Street(size_t name_idx, std::vector<Point> points)
     : name_idx(name_idx), points(points) { }
 
-AdminArea::AdminArea() : name_idx(0), boundary(), level(0), bl(Point()), tr(Point()), _projected_boundary() { }
+AdminArea::AdminArea() :
+    name_idx(0), boundary(), level(0), bl(Point()), tr(Point()), _projected_boundary(), _edges() { }
 
 AdminArea::AdminArea(size_t name_idx, std::vector<Point> boundary, uint8_t level)
     : name_idx(name_idx), boundary(boundary), level(level) {
     
-    if (this->boundary.empty()) {
+    if (boundary.empty()) {
         bl = tr = Point(0, 0);
         return;
     }
@@ -58,16 +60,45 @@ AdminArea::AdminArea(size_t name_idx, std::vector<Point> boundary, uint8_t level
     _projected_boundary.clear();
     _projected_boundary.reserve(boundary.size());
 
-    bl = Point::project_mercator(this->boundary[0].x, this->boundary[0].y);
-    tr = Point::project_mercator(this->boundary[0].x, this->boundary[0].y);
+    bl = Point::project_mercator(boundary[0].x, boundary[0].y);
+    tr = Point::project_mercator(boundary[0].x, boundary[0].y);
 
-    for (const auto& p : this->boundary) {
+    for (const auto& p : boundary) {
         const Point projected = Point::project_mercator(p.x, p.y);
         if (projected.x < bl.x) bl.x = projected.x;
         if (projected.y < bl.y) bl.y = projected.y;
         if (projected.x > tr.x) tr.x = projected.x;
         if (projected.y > tr.y) tr.y = projected.y;
         _projected_boundary.push_back(projected);
+    }
+
+    // Prepare edges for faster PiP
+    const size_t n = _projected_boundary.size();
+    _edges.reserve(n);
+
+    for (size_t i = 0, j = n - 1; i < n; j = i++) {
+        double xi = _projected_boundary[i].x;
+        double yi = _projected_boundary[i].y;
+        double xj = _projected_boundary[j].x;
+        double yj = _projected_boundary[j].y;
+
+        if (yi == yj) continue;  // SKip horizontal edges
+
+        Edge e;
+
+        if (yi < yj) {
+            e.y_min = yi;
+            e.y_max = yj;
+            e.x_at_y_min = xi;
+            e.inv_slope = (xj - xi) / (yj - yi);
+        } else {
+            e.y_min = yj;
+            e.y_max = yi;
+            e.x_at_y_min = xj;
+            e.inv_slope = (xi - xj) / (yi - yj);
+        }
+
+        _edges.push_back(e);
     }
 }
 
@@ -85,6 +116,22 @@ bool AdminArea::point_in_polygon(const Point& p) const {
             (projected.x < (pj.x - pi.x) * (projected.y - pi.y) / (pj.y - pi.y) + pi.x))
         {
             inside = !inside;
+        }
+    }
+
+    return inside;
+}
+
+bool AdminArea::point_in_polygon_fast(const Point& p) const {
+    const Point projected = Point::project_mercator(p.x, p.y);
+    if (projected.x < bl.x || projected.x > tr.x || projected.y < bl.y || projected.y > tr.y) return false;
+    
+    bool inside = false;
+    for (const Edge& e : _edges) {
+        const bool active = (projected.y >= e.y_min) & (projected.y < e.y_max);
+        if (active) {
+            const double x_int = e.x_at_y_min + (projected.y - e.y_min) * e.inv_slope;
+            inside ^= (projected.x < x_int);
         }
     }
 
