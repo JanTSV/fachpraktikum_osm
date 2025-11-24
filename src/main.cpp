@@ -511,6 +511,14 @@ class KDSolution : public ISolution {
             // pts.clear();
             // std::cout << "\tPoint in polygon test for buildings..." << std::endl;
             // start = std::chrono::high_resolution_clock::now();
+            // std::sort(
+            //     _admin_areas.begin(),
+            //     _admin_areas.end(),
+            //     [](const AdminArea& a, const AdminArea& b) {
+            //         return a.level < b.level;
+            //     }
+            // );
+
             // for (size_t i = 0; i < _buildings.size(); ++i) {
             //     Building& building = _buildings[i];
             //     const Point& p = building.location;
@@ -529,7 +537,9 @@ class KDSolution : public ISolution {
             //     }
             //     building.address = build_address(address);
 
-            //     //std::cout << "PiP: " << i << " / " << _buildings.size() << std::endl;
+            //     std::cout << "PiP: " << i << " / " << _buildings.size() << std::endl;
+
+            //     //if (i >= 100000) break;
             // }
             // end = std::chrono::high_resolution_clock::now();
             // std::cout << "\tAssigned areas to buldings " << get_duration(end - start) << std::endl;
