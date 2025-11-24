@@ -10,6 +10,7 @@
 #include <ostream>
 #include <string>
 #include <fstream>
+#include <unordered_set>
 
 #include <osmium/io/any_input.hpp>
 #include <osmium/osm/area.hpp>
@@ -25,7 +26,7 @@
 #include <boost/serialization/optional.hpp>
 #include <boost/serialization/string.hpp>
 #include <boost/serialization/access.hpp>
-#include <boost/serialization/unique_ptr.hpp>
+#include <boost/serialization/map.hpp>
 #include <vector>
 
 #include "httplib.h"
@@ -309,11 +310,7 @@ class KDSolution : public ISolution {
         void add_admin_area(const char* name, std::vector<Point> boundary, uint8_t level) override {
             if (!name) return;
             AdminArea area(_string_store.get_or_add(name), boundary, level);
-            double half_width = (area.tr.x - area.bl.x) / 2.0;
-            double half_height = (area.tr.y - area.bl.y) / 2.0;
-            _areas_max_half_width  = std::max(_areas_max_half_width, half_width);
-            _areas_max_half_height = std::max(_areas_max_half_height, half_height);
-            _admin_areas.emplace_back(area);
+            _hierarchical_admin_areas[level].push_back(area);
         }
 
         size_t num_buildings() const override {
@@ -325,7 +322,11 @@ class KDSolution : public ISolution {
         }
 
         size_t num_admin_areas() const override {
-            return _admin_areas.size();
+            size_t num = 0;
+            for (const auto& [_, areas] : _hierarchical_admin_areas) {
+                num += areas.size();
+            }
+            return num;
         }
 
         std::string get_buildings_in_view(double sw_lat, double sw_lon, double ne_lat, double ne_lon) const override {
@@ -389,33 +390,37 @@ class KDSolution : public ISolution {
 
             Point projected_bl = Point::project_mercator(sw_lat, sw_lon);
             Point projected_tr = Point::project_mercator(ne_lat, ne_lon);
-            std::vector<size_t> areas = _admin_areas_tree.range_search(
-                projected_bl.x - _areas_max_half_width, 
-                projected_bl.y - _areas_max_half_height, 
-                projected_tr.x + _areas_max_half_width, 
-                projected_tr.y + _areas_max_half_height);
-            std::unordered_set<size_t> areas_in_view;
-            for (size_t area_idx : areas) {
-                areas_in_view.insert(area_idx);
-            }
-
+            
             bool first = true;
-            for (size_t a : areas_in_view) {
-                const auto &area = _admin_areas[a];
+            for (const auto& [level, area_level] : _hierarchical_admin_areas_trees) {
+                std::unordered_set<size_t> areas_in_view;
+                std::vector<size_t> areas = area_level.tree.range_search(
+                    projected_bl.x - area_level.max_half_width, 
+                    projected_bl.y - area_level.max_half_height, 
+                    projected_tr.x + area_level.max_half_width, 
+                    projected_tr.y + area_level.max_half_height);
 
-                if (!first) json << ",";
-                first = false;
-
-                json << "{\"name\":\""
-                    << _string_store.get(area.name_idx)
-                    << "\",\"points\":[";
-
-                for (size_t i = 0; i < area.boundary.size(); i++) {
-                    json << "[" << area.boundary[i].x << "," << area.boundary[i].y << "]";
-                    if (i + 1 < area.boundary.size()) json << ",";
+                for (size_t area_idx : areas) {
+                    areas_in_view.insert(area_idx);
                 }
 
-                json << "]}";
+                for (size_t a : areas_in_view) {
+                    const auto &area = _hierarchical_admin_areas.at(level).at(a);
+
+                    if (!first) json << ",";
+                    first = false;
+
+                    json << "{\"name\":\""
+                        << _string_store.get(area.name_idx)
+                        << "\",\"points\":[";
+
+                    for (size_t i = 0; i < area.boundary.size(); i++) {
+                        json << "[" << area.boundary[i].x << "," << area.boundary[i].y << "]";
+                        if (i + 1 < area.boundary.size()) json << ",";
+                    }
+
+                    json << "]}";
+                }
             }
             
             json << "]";
@@ -452,97 +457,65 @@ class KDSolution : public ISolution {
 
         void preprocess() override {
             std::vector<std::pair<Point, size_t>> pts;
-            
-            // admin areas kdtree
-            std::cout << "\tBuilding admin areas kdtree..." << std::endl;
-            auto start = std::chrono::high_resolution_clock::now();
-            for (size_t i = 0; i < _admin_areas.size(); i++) {
-                const auto& area = _admin_areas[i];
-                Point center((area.bl.x + area.tr.x) / 2.0, (area.bl.y + area.tr.y) / 2.0);
-                pts.emplace_back(center, i);
-            }
-            _admin_areas_tree.build(pts);
-            auto end = std::chrono::high_resolution_clock::now();
-            std::cout << "\tKDtree built " << get_duration(end - start) << std::endl;
 
-            // Point in polygon for each building
+            // admin areas hierarchical
+            std::cout << "\tBuilding hierarchical admin areas kdtrees..." << std::endl;
+            auto start = std::chrono::high_resolution_clock::now();
+            for (const auto& [level, areas] : _hierarchical_admin_areas) {
+                double max_half_width = 0.0;
+                double max_half_height = 0.0;
+
+                for (size_t i = 0; i < areas.size(); i++) {
+                    const auto& area = areas[i];
+                    Point center((area.bl.x + area.tr.x) / 2.0, (area.bl.y + area.tr.y) / 2.0);
+                    pts.emplace_back(center, i);
+
+                    const double half_width = (area.tr.x - area.bl.x) / 2.0;
+                    const double half_height = (area.tr.y - area.bl.y) / 2.0;
+                    max_half_width = std::max(max_half_width, half_width);
+                    max_half_height = std::max(max_half_height, half_height);
+                }
+
+                AdminAreaLevel area_level(max_half_width, max_half_height, pts);
+                _hierarchical_admin_areas_trees[level] = area_level;
+                pts.clear();
+            }
+            auto end = std::chrono::high_resolution_clock::now();
+            std::cout << "\tHierarchical admin areas kdtrees built " << get_duration(end - start) << std::endl;
+
+            // PiP for each building using hierarchical admin areas
             pts.clear();
-            std::cout << "\tPoint in polygon test for buildings..." << std::endl;
+            std::cout << "\tPoint in polygon test for buildings using hierarchical admin areas..." << std::endl;
             start = std::chrono::high_resolution_clock::now();
             for (size_t i = 0; i < _buildings.size(); ++i) {
                 Building& building = _buildings[i];
                 const Point& p = building.location;
                 const Point& projected = Point::project_mercator(p.x, p.y);
-                pts.emplace_back(p, i);
 
-                std::vector<size_t> area_candidates = _admin_areas_tree.range_search(
-                    projected.x - _areas_max_half_width, 
-                    projected.y - _areas_max_half_height, 
-                    projected.x + _areas_max_half_width, 
-                    projected.y + _areas_max_half_height);
-                std::sort(
-                    area_candidates.begin(),
-                    area_candidates.end(),
-                    [this](const size_t a, const size_t b) {
-                        return _admin_areas[a].level < _admin_areas[b].level;
-                    }
-                );
+                pts.emplace_back(p, i);  // Add to pts for buildings later
 
-                uint8_t last_lvl = std::numeric_limits<uint8_t>::max();
                 std::vector<size_t> address;
-                for (const size_t a : area_candidates) {
-                    const AdminArea& area = _admin_areas[a];
-                    if (area.level == last_lvl) continue;
+                for (const auto& [level, area_level] : _hierarchical_admin_areas_trees) {
+                    std::vector<size_t> area_candidates = area_level.tree.range_search(
+                        projected.x - area_level.max_half_width, 
+                        projected.y - area_level.max_half_height, 
+                        projected.x + area_level.max_half_width, 
+                        projected.y + area_level.max_half_height);
 
-                    if (area.point_in_polygon_fast(p)) {
-                        address.push_back(a);
-                        last_lvl = area.level;
+                    for (const size_t a : area_candidates) {
+                        const AdminArea& area = _hierarchical_admin_areas[level][a];
+                        if (area.point_in_polygon_fast(p)) {
+                            address.push_back(area.name_idx);
+                            break;
+                        }
                     }
                 }
-
-                building.address = build_address(address);
                 
+                building.address = build_address(address);
                 // std::cout << "PiP: " << i << " / " << _buildings.size() << std::endl;
             }
             end = std::chrono::high_resolution_clock::now();
-            std::cout << "\tAssigned areas to buldings " << get_duration(end - start) << std::endl;
-
-            // Point in polygon for each building
-            // pts.clear();
-            // std::cout << "\tPoint in polygon test for buildings..." << std::endl;
-            // start = std::chrono::high_resolution_clock::now();
-            // std::sort(
-            //     _admin_areas.begin(),
-            //     _admin_areas.end(),
-            //     [](const AdminArea& a, const AdminArea& b) {
-            //         return a.level < b.level;
-            //     }
-            // );
-
-            // for (size_t i = 0; i < _buildings.size(); ++i) {
-            //     Building& building = _buildings[i];
-            //     const Point& p = building.location;
-            //     pts.emplace_back(p, i);
-
-            //     uint8_t last_lvl = std::numeric_limits<uint8_t>::max();
-            //     std::vector<size_t> address;
-            //     for (size_t a = 0; a < _admin_areas.size(); a++) {
-            //         const AdminArea& area = _admin_areas[a];
-            //         if (area.level == last_lvl) continue;
-
-            //         if (area.point_in_polygon(p)) {
-            //             address.push_back(a);
-            //             last_lvl = area.level;
-            //         }
-            //     }
-            //     building.address = build_address(address);
-
-            //     std::cout << "PiP: " << i << " / " << _buildings.size() << std::endl;
-
-            //     //if (i >= 100000) break;
-            // }
-            // end = std::chrono::high_resolution_clock::now();
-            // std::cout << "\tAssigned areas to buldings " << get_duration(end - start) << std::endl;
+            std::cout << "\tAssigned areas to buildings " << get_duration(end - start) << std::endl;
 
             // buildings kdtree
             std::cout << "\tBuilding buildings kdtree..." << std::endl;
@@ -611,17 +584,36 @@ class KDSolution : public ISolution {
         KDTree _streets_tree;
         std::vector<Street> _streets;
 
-        KDTree _admin_areas_tree;
-        std::vector<AdminArea> _admin_areas;
+        struct AdminAreaLevel {
+            public:
+                double max_half_width;
+                double max_half_height;
+                KDTree tree;
 
-        double _areas_max_half_width = 0.0;
-        double _areas_max_half_height = 0.0;
+                AdminAreaLevel() : max_half_width(0.0), max_half_height(0.0), tree() { }
+
+                AdminAreaLevel(double max_half_width, double max_half_height, std::vector<std::pair<Point, size_t>> points)
+                    : max_half_width(max_half_width), max_half_height(max_half_height), tree() {
+                        tree.build(points);
+                }
+
+            private:
+                friend class boost::serialization::access;
+                template<class Archive>
+                void serialize(Archive& ar, const unsigned int /*version*/) {
+                    ar & max_half_width;
+                    ar & max_half_height;
+                    ar & tree;
+                }
+        };
+
+        std::map<uint8_t, AdminAreaLevel> _hierarchical_admin_areas_trees;
+        std::map<uint8_t, std::vector<AdminArea>> _hierarchical_admin_areas;
 
         size_t build_address(const std::vector<size_t>& addr) {
             std::ostringstream addr_string;
             for (size_t a : addr) {
-                const AdminArea& area = _admin_areas[a];
-                addr_string << _string_store.get(area.name_idx) << ", ";
+                addr_string << _string_store.get(a) << ", ";
             }
 
             return _string_store.get_or_add(addr_string.str());
@@ -635,8 +627,8 @@ class KDSolution : public ISolution {
             ar & _buildings;
             ar & _streets_tree;
             ar & _streets;
-            ar & _admin_areas_tree;
-            ar & _admin_areas;
+            ar & _hierarchical_admin_areas_trees;
+            ar & _hierarchical_admin_areas;
         }
 };
 
