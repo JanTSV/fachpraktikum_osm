@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cfloat>
+#include <algorithm>
 
 Point::Point() : x(0), y(0) { }
 
@@ -47,58 +48,77 @@ Street::Street(size_t name_idx, std::vector<Point> points)
     : name_idx(name_idx), points(points) { }
 
 AdminArea::AdminArea() :
-    name_idx(0), boundary(), level(0), bl(Point()), tr(Point()), _projected_boundary(), _edges() { }
+    name_idx(0), boundary(), level(0), bl(Point()), tr(Point()), _projected_boundary(), _edges(), _bins(), _bin_height() { }
 
 AdminArea::AdminArea(size_t name_idx, std::vector<Point> boundary, uint8_t level)
     : name_idx(name_idx), boundary(boundary), level(level) {
-    
+
+    const size_t BIN_COUNT = 32;
     if (boundary.empty()) {
         bl = tr = Point(0, 0);
+        _bin_height = 1.0;
+        _bins.assign(BIN_COUNT, {});
         return;
     }
 
     _projected_boundary.clear();
     _projected_boundary.reserve(boundary.size());
 
-    bl = Point::project_mercator(boundary[0].x, boundary[0].y);
-    tr = Point::project_mercator(boundary[0].x, boundary[0].y);
+    Point first_proj = Point::project_mercator(boundary[0].x, boundary[0].y);
+    bl = tr = first_proj;
 
     for (const auto& p : boundary) {
         const Point projected = Point::project_mercator(p.x, p.y);
-        if (projected.x < bl.x) bl.x = projected.x;
-        if (projected.y < bl.y) bl.y = projected.y;
-        if (projected.x > tr.x) tr.x = projected.x;
-        if (projected.y > tr.y) tr.y = projected.y;
+        bl.x = std::min(bl.x, projected.x);
+        bl.y = std::min(bl.y, projected.y);
+        tr.x = std::max(tr.x, projected.x);
+        tr.y = std::max(tr.y, projected.y);
         _projected_boundary.push_back(projected);
     }
 
-    // Prepare edges for faster PiP
-    const size_t n = _projected_boundary.size();
-    _edges.reserve(n);
-
+    _edges.clear();
+    size_t n = _projected_boundary.size();
     for (size_t i = 0, j = n - 1; i < n; j = i++) {
-        double xi = _projected_boundary[i].x;
-        double yi = _projected_boundary[i].y;
-        double xj = _projected_boundary[j].x;
-        double yj = _projected_boundary[j].y;
-
-        if (yi == yj) continue;  // SKip horizontal edges
+        const Point& pi = _projected_boundary[i];
+        const Point& pj = _projected_boundary[j];
+        if (pi.y == pj.y) continue; // skip horizontal edges
 
         Edge e;
-
-        if (yi < yj) {
-            e.y_min = yi;
-            e.y_max = yj;
-            e.x_at_y_min = xi;
-            e.inv_slope = (xj - xi) / (yj - yi);
+        if (pi.y < pj.y) {
+            e.y_min = pi.y;
+            e.y_max = pj.y;
+            e.x_at_y_min = pi.x;
+            e.inv_slope = (pj.x - pi.x) / (pj.y - pi.y);
         } else {
-            e.y_min = yj;
-            e.y_max = yi;
-            e.x_at_y_min = xj;
-            e.inv_slope = (xi - xj) / (yi - yj);
+            e.y_min = pj.y;
+            e.y_max = pi.y;
+            e.x_at_y_min = pj.x;
+            e.inv_slope = (pi.x - pj.x) / (pi.y - pj.y);
         }
-
         _edges.push_back(e);
+    }
+
+    _bins.assign(BIN_COUNT, {});
+    _bin_height = (tr.y - bl.y) / BIN_COUNT;
+    if (_bin_height < 1e-12) _bin_height = 1.0;
+
+    auto clamp_to_bin = [&](double y) {
+        size_t b = size_t((y - bl.y) / _bin_height);
+        if (b >= BIN_COUNT) b = BIN_COUNT - 1;
+        return b;
+    };
+
+    for (size_t ei = 0; ei < _edges.size(); ++ei) {
+        const Edge& e = _edges[ei];
+        if (e.y_max < bl.y || e.y_min > tr.y) continue; // skip edges outside bbox
+
+        size_t b0 = clamp_to_bin(e.y_min);
+        size_t b1 = clamp_to_bin(e.y_max);
+        if (b0 > b1) std::swap(b0, b1);
+
+        for (size_t b = b0; b <= b1; ++b) {
+            _bins[b].push_back(ei);
+        }
     }
 }
 
@@ -124,13 +144,19 @@ bool AdminArea::point_in_polygon(const Point& p) const {
 
 bool AdminArea::point_in_polygon_fast(const Point& p) const {
     const Point projected = Point::project_mercator(p.x, p.y);
-    if (projected.x < bl.x || projected.x > tr.x || projected.y < bl.y || projected.y > tr.y) return false;
-    
+    if (projected.x < bl.x || projected.x > tr.x || projected.y < bl.y || projected.y > tr.y)
+        return false;
+
+    size_t bin = size_t((projected.y - bl.y) / _bin_height);
+    if (bin >= _bins.size()) bin = _bins.size() - 1;
+
     bool inside = false;
-    for (const Edge& e : _edges) {
-        const bool active = (projected.y >= e.y_min) & (projected.y < e.y_max);
-        if (active) {
-            const double x_int = e.x_at_y_min + (projected.y - e.y_min) * e.inv_slope;
+    const auto& edges = _bins[bin];
+
+    for (size_t ei : edges) {
+        const Edge& e = _edges[ei];
+        if (projected.y >= e.y_min && projected.y < e.y_max) {
+            double x_int = e.x_at_y_min + (projected.y - e.y_min) * e.inv_slope;
             inside ^= (projected.x < x_int);
         }
     }

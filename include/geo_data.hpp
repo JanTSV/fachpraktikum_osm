@@ -112,6 +112,8 @@ private:
 
     std::vector<Point> _projected_boundary;
     std::vector<Edge> _edges;
+    std::vector<std::vector<size_t>> _bins;
+    double _bin_height;
 
     friend class boost::serialization::access;
     template<class Archive>
@@ -123,5 +125,7 @@ private:
         ar & tr;
         ar & _projected_boundary;
         ar & _edges;
+        ar & _bins;
+        ar & _bin_height;
     }
 };
