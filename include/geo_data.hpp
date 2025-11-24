@@ -42,7 +42,7 @@ public:
     Point location;
     std::optional<size_t> street_idx;
     std::optional<HouseNumber> house_number;
-    std::vector<size_t> address;
+    size_t address;
 
     Building();
     Building(Point location, std::optional<size_t> street_idx, std::optional<HouseNumber> house_number);

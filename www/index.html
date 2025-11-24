@@ -142,7 +142,7 @@
       .then(admin_areas => {
         admin_areas.forEach(admin_area => {
           const latlngs = admin_area.points.map(p => [p[0], p[1]]);
-          L.polygon(latlngs, { color: 'red', weight: 2, fillOpacity: 0 })
+          L.polygon(latlngs, { color: 'red', weight: 4, fillOpacity: 0.1 })
             .addTo(adminLayer)
             .bindPopup(admin_area.name);
         });

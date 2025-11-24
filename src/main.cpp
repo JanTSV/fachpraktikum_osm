@@ -7,6 +7,7 @@
 #include <iomanip>
 #include <limits>
 #include <optional>
+#include <ostream>
 #include <string>
 #include <fstream>
 
@@ -432,11 +433,7 @@ class KDSolution : public ISolution {
             json << "\"lat\":" << building.location.x << ",";
             json << "\"lon\":" << building.location.y << ",";
 
-            json << "\"address\":\"";
-            for (size_t a : building.address) {
-                const AdminArea& area = _admin_areas[a];
-                json << _string_store.get(area.name_idx) << ", ";
-            }
+            json << "\"address\":\"" << _string_store.get(building.address);
 
             if (building.street_idx) {
                 json << _string_store.get(*building.street_idx);
@@ -483,7 +480,6 @@ class KDSolution : public ISolution {
                     projected.y - _areas_max_half_height, 
                     projected.x + _areas_max_half_width, 
                     projected.y + _areas_max_half_height);
-
                 std::sort(
                     area_candidates.begin(),
                     area_candidates.end(),
@@ -493,23 +489,25 @@ class KDSolution : public ISolution {
                 );
 
                 uint8_t last_lvl = std::numeric_limits<uint8_t>::max();
+                std::vector<size_t> address;
                 for (const size_t a : area_candidates) {
                     const AdminArea& area = _admin_areas[a];
                     if (area.level == last_lvl) continue;
 
                     if (area.point_in_polygon(p)) {
-                        building.address.push_back(a);
+                        address.push_back(a);
                         last_lvl = area.level;
                     }
                 }
-                
 
+                building.address = build_address(address);
+                
                 // std::cout << "PiP: " << i << " / " << _buildings.size() << std::endl;
             }
             end = std::chrono::high_resolution_clock::now();
             std::cout << "\tAssigned areas to buldings " << get_duration(end - start) << std::endl;
 
-            // // Point in polygon for each building
+            // Point in polygon for each building
             // pts.clear();
             // std::cout << "\tPoint in polygon test for buildings..." << std::endl;
             // start = std::chrono::high_resolution_clock::now();
@@ -519,17 +517,19 @@ class KDSolution : public ISolution {
             //     pts.emplace_back(p, i);
 
             //     uint8_t last_lvl = std::numeric_limits<uint8_t>::max();
+            //     std::vector<size_t> address;
             //     for (size_t a = 0; a < _admin_areas.size(); a++) {
             //         const AdminArea& area = _admin_areas[a];
             //         if (area.level == last_lvl) continue;
 
             //         if (area.point_in_polygon(p)) {
-            //             building.address.push_back(a);
+            //             address.push_back(a);
             //             last_lvl = area.level;
             //         }
             //     }
+            //     building.address = build_address(address);
 
-            //     // std::cout << "PiP: " << i << " / " << _buildings.size() << std::endl;
+            //     //std::cout << "PiP: " << i << " / " << _buildings.size() << std::endl;
             // }
             // end = std::chrono::high_resolution_clock::now();
             // std::cout << "\tAssigned areas to buldings " << get_duration(end - start) << std::endl;
@@ -563,15 +563,21 @@ class KDSolution : public ISolution {
                 if (building.street_idx) continue;
 
                 // Check if nearest building has a street name
-                std::optional<size_t> nearest_idx = _buildings_tree.find_nearest(building.location);
-                if (nearest_idx && _buildings[*nearest_idx].street_idx) {
-                    building.street_idx = _buildings[*nearest_idx].street_idx;
-                } else {
-                    // Otherwise find nearest street segment
-                    nearest_idx = _streets_tree.find_nearest(building.location);
-                    if (nearest_idx) {
-                        building.street_idx = _streets[*nearest_idx].name_idx;
-                    }
+                // std::optional<size_t> nearest_idx = _buildings_tree.find_nearest(building.location);
+                // if (nearest_idx && _buildings[*nearest_idx].street_idx) {
+                //     building.street_idx = _buildings[*nearest_idx].street_idx;
+                // } else {
+                //     // Otherwise find nearest street segment
+                //     nearest_idx = _streets_tree.find_nearest(building.location);
+                //     if (nearest_idx) {
+                //         building.street_idx = _streets[*nearest_idx].name_idx;
+                //     }
+                // }
+
+                // Check only for nearest street
+                std::optional<size_t> nearest_idx = _streets_tree.find_nearest(building.location);
+                if (nearest_idx) {
+                    building.street_idx = _streets[*nearest_idx].name_idx;
                 }
 
                 // std::cout << "\t\t" << i << " / " << total << std::endl;
@@ -600,6 +606,16 @@ class KDSolution : public ISolution {
 
         double _areas_max_half_width = 0.0;
         double _areas_max_half_height = 0.0;
+
+        size_t build_address(const std::vector<size_t>& addr) {
+            std::ostringstream addr_string;
+            for (size_t a : addr) {
+                const AdminArea& area = _admin_areas[a];
+                addr_string << _string_store.get(area.name_idx) << ", ";
+            }
+
+            return _string_store.get_or_add(addr_string.str());
+        }
 
         friend class boost::serialization::access;
         template<class Archive>

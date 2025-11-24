@@ -22,7 +22,6 @@ size_t MappedStringStore::get_or_add(const std::string& value) {
     return idx;
 }
 
-
 std::string MappedStringStore::get(size_t idx) const {
     return _data[idx];
 }

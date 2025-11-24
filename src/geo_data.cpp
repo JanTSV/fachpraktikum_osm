@@ -35,10 +35,10 @@ Point Point::project_mercator(double lat, double lon) {
 }
 
 
-Building::Building() : location(), street_idx(std::nullopt), house_number(std::nullopt), address() { }
+Building::Building() : location(), street_idx(std::nullopt), house_number(std::nullopt), address(0) { }
 
 Building::Building(Point location, std::optional<size_t> street_idx, std::optional<HouseNumber> house_number)
-    : location(location), street_idx(street_idx), house_number(house_number), address() { }
+    : location(location), street_idx(street_idx), house_number(house_number), address(0) { }
 
 Street::Street() : name_idx(0), points() { }
 
