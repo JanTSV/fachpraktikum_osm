@@ -24,6 +24,28 @@ double Point::euclidean_distance(const Point& other) const {
     return std::sqrt(std::pow(x - other.x, 2) + std::pow(y - other.y, 2));
 }
 
+const double EARTH_RADIUS_M = 6371000.0;
+
+double Point::haversine_distance(const Point& other) const {
+    double lat1 = x * M_PI / 180.0;
+    double lon1 = y * M_PI / 180.0;
+    double lat2 = other.x * M_PI / 180.0;
+    double lon2 = other.y * M_PI / 180.0;
+
+    double dlat = lat2 - lat1;
+    double dlon = lon2 - lon1;
+
+    double sin_dlat_2 = std::sin(dlat / 2.0);
+    double sin_dlon_2 = std::sin(dlon / 2.0);
+
+    double a_hav = sin_dlat_2 * sin_dlat_2 +
+                   std::cos(lat1) * std::cos(lat2) * sin_dlon_2 * sin_dlon_2;
+
+    double c = 2.0 * std::atan2(std::sqrt(a_hav), std::sqrt(1.0 - a_hav));
+
+    return EARTH_RADIUS_M * c;
+}
+
 Point Point::project_mercator(double lat, double lon) {
     double x = R * lon * M_PI / 180.0;
 
@@ -48,7 +70,7 @@ Street::Street(size_t name_idx, std::vector<Point> points)
     : name_idx(name_idx), points(points) { }
 
 AdminArea::AdminArea() :
-    name_idx(0), boundary(), level(0), bl(Point()), tr(Point()), _projected_boundary(), _edges(), _bins(), _bin_height() { }
+    name_idx(0), boundary(), bl(Point()), tr(Point()), level(0), _projected_boundary(), _edges(), _bins(), _bin_height() { }
 
 AdminArea::AdminArea(size_t name_idx, std::vector<Point> boundary, uint8_t level)
     : name_idx(name_idx), boundary(boundary), level(level) {

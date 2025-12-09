@@ -202,7 +202,9 @@
       })
       .then(r => r.json())
       .then(data => {
-        if (!data || !data.lat || !data.lon) return;
+        if (!data || !data.lat || !data.lon || !data.distance) return;
+
+        console.log(data.distance);
 
         // Remove previous marker if it exists
         if (nearestMarker) map.removeLayer(nearestMarker);

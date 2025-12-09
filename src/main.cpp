@@ -210,7 +210,7 @@ class KDTree {
 
                 Node() = default;
                 Node(Point point, size_t idx, size_t left, size_t right, uint8_t axis, Point bl, Point tr)
-                    : point(point), idx(idx), left(left), right(right), axis(axis), bl(bl), tr(tr) { }
+                    : point(point), idx(idx), left(left), right(right), bl(bl), tr(tr), axis(axis) { }
 
             private:
                 friend class boost::serialization::access;
@@ -446,10 +446,11 @@ class KDSolution : public ISolution {
             json << "\",";
 
             if (building.house_number) {
-                json << "\"house_number\":\"" << *building.house_number << "\"";
+                json << "\"house_number\":\"" << *building.house_number << "\",";
             } else {
-                json << "\"house_number\":null";
+                json << "\"house_number\":null,";
             }
+            json << "\"distance\":" << building.location.haversine_distance(target);
 
             json << "}";
             return json.str();

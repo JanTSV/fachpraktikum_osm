@@ -26,6 +26,8 @@ public:
 
     double euclidean_distance(const Point& other) const;
 
+    double haversine_distance(const Point& other) const;
+
     static Point project_mercator(double lat, double lon);
 
 private:
