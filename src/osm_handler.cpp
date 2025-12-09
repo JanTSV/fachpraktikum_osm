@@ -83,10 +83,7 @@ void OSMHandler::area(const osmium::Area& area) {
     const osmium::TagList& tags = area.tags();
 
     if (is_building(tags)) {
-        const auto& rings = area.outer_rings();
-        if (rings.empty()) return;
-        const osmium::OuterRing& ring = *rings.begin();
-        std::optional<Point> centroid = compute_centroid(ring);
+        std::optional<Point> centroid = compute_centroid(area);
 
         if (centroid) {
             _solution.add_building((*centroid).x, (*centroid).y,
@@ -124,15 +121,18 @@ void OSMHandler::area(const osmium::Area& area) {
     }
 }
 
-std::optional<Point> OSMHandler::compute_centroid(const osmium::OuterRing& ring) {
+std::optional<Point> OSMHandler::compute_centroid(const osmium::Area& area) {
     double sum_lat = 0.0, sum_lon = 0.0;
     size_t count = 0;
-    for (size_t i = 0; i < ring.size(); ++i) {
-        if (!ring[i].location().valid()) continue;
-        sum_lat += ring[i].lat();
-        sum_lon += ring[i].lon();
-        ++count;
+    for (const auto& ring : area.outer_rings()) {
+        for (size_t i = 0; i < ring.size(); ++i) {
+            if (!ring[i].location().valid()) continue;
+            sum_lat += ring[i].lat();
+            sum_lon += ring[i].lon();
+            ++count;
+        }
     }
     if (count == 0) return std::nullopt;
+   
     return Point(sum_lat / count, sum_lon / count);
 }

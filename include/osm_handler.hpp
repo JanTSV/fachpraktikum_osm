@@ -28,5 +28,5 @@ class OSMHandler : public osmium::handler::Handler {
     private:
         ISolution& _solution;
 
-        std::optional<Point> compute_centroid(const osmium::OuterRing& ring);
+        std::optional<Point> compute_centroid(const osmium::Area& area);
 };
