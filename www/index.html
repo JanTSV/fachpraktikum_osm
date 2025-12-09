@@ -22,9 +22,10 @@
 </head>
 <body>
   <div id="controls">
-    <label><input type="checkbox" id="chkBuildings" checked> Buildings</label><br>
-    <label><input type="checkbox" id="chkStreets" checked> Streets</label><br>
-    <label><input type="checkbox" id="chkAdmins" checked> Admin areas</label>
+    <label><input type="checkbox" id="chkBuildings" checked>Buildings</label><br>
+    <label><input type="checkbox" id="chkStreets" checked>Streets</label><br>
+    <label><input type="checkbox" id="chkAdmins" checked>Admin areas</label><br>
+    <label><input type="checkbox" id="chkDynamic" checked>Dynamic</label>
   </div>
 
   <div id="map"></div>
@@ -44,36 +45,68 @@
     const chkBuildings = document.getElementById("chkBuildings");
     const chkStreets = document.getElementById("chkStreets");
     const chkAdmins = document.getElementById("chkAdmins");
+    const chkDynamic = document.getElementById("chkDynamic");
 
-    // visibility of layers depending on checkboxes
-    function updateLayerVisibility() {
-      if (chkBuildings.checked) {
-        map.addLayer(buildingsLayer);
-        fetchBuildings(getBoundingBox());
-      }
-      else {
-        map.removeLayer(buildingsLayer);
-      }
+    function dynamicVisibilityChecked() {
+      const checked = chkDynamic.checked;
+      chkBuildings.disabled = checked;
+      chkStreets.disabled = checked;
+      chkAdmins.disabled = checked;
 
-      if (chkStreets.checked) {
-        map.addLayer(streetsLayer);
-        fetchStreets(getBoundingBox());
-      }
-      else {
-        map.removeLayer(streetsLayer);
-      }
+      updateLayers();
+    }
 
-      if (chkAdmins.checked) {
-        map.addLayer(adminLayer);
-      }
-      else {
-        map.removeLayer(adminLayer);
+    function updateLayers() {
+      const boundingBox = getBoundingBox();
+
+      buildingsLayer.clearLayers();
+      streetsLayer.clearLayers();
+      adminLayer.clearLayers();
+
+      if (chkDynamic.checked) {
+        const zoom = map.getZoom();
+        if (zoom >= 15) {
+          map.addLayer(buildingsLayer);
+          fetchBuildings(boundingBox);
+        }
+        
+        if (zoom >= 13) {
+          map.addLayer(streetsLayer);
+          fetchStreets(boundingBox);
+        }
+
+        if (zoom < 13) {
+          map.addLayer(adminLayer);
+          fetchAdminAreas(boundingBox);
+        }
+      } else {
+        if (chkBuildings.checked) {
+          map.addLayer(buildingsLayer);
+          fetchBuildings(boundingBox);
+        } else {
+          map.removeLayer(buildingsLayer);
+        }
+
+        if (chkStreets.checked) {
+          map.addLayer(streetsLayer);
+          fetchStreets(boundingBox);
+        } else {
+          map.removeLayer(streetsLayer);
+        }
+
+        if (chkAdmins.checked) {
+          map.addLayer(adminLayer);
+          fetchAdminAreas(boundingBox);
+        } else {
+          map.removeLayer(adminLayer);
+        }
       }
     }
 
-    chkBuildings.onchange = updateLayerVisibility;
-    chkStreets.onchange = updateLayerVisibility;
-    chkAdmins.onchange = updateLayerVisibility;
+    chkBuildings.onchange = updateLayers;
+    chkStreets.onchange = updateLayers;
+    chkAdmins.onchange = updateLayers;
+    chkDynamic.onchange = dynamicVisibilityChecked;
 
     function getBoundingBox() {
       const bounds = map.getBounds();
@@ -150,23 +183,7 @@
     }
 
     map.on('moveend', () => {
-      // BUILDINGS
-      buildingsLayer.clearLayers();
-      if (chkBuildings.checked) {
-        fetchBuildings(getBoundingBox());
-      }
-
-      // STREETS
-      streetsLayer.clearLayers();
-      if (chkStreets.checked) {
-        fetchStreets(getBoundingBox());
-      }
-
-      // ADMIN AREAS
-      adminLayer.clearLayers();
-      if (chkAdmins.checked) {
-        fetchAdminAreas(getBoundingBox());
-      }
+      updateLayers();
     });
       
     // NEAREST
