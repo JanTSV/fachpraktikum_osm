@@ -266,47 +266,65 @@
     // NEAREST
     map.on('click', e => {
       const { lat, lng } = e.latlng;
+
+      let findBuilding = false;
+      let findStreet = false;
       
       if (chkDynamic.checked) {
         const zoom = map.getZoom();
         if (zoom >= 15) {
           // Buildings
-          fetchNearestBuilding(lat, lng)
-          .then(data => displayNearestBuilding(data));
-        } else {
-          map.removeLayer(nearestBuilding);
+          findBuilding = true;
         }
         
         if (zoom >= 13) {
           // Streets
-          fetchNearestStreet(lat, lng)
-          .then(data => displayNearestStreet(data));
-        } else {
-          map.removeLayer(nearestStreet);
+          findStreet = true;
         }
 
         if (zoom < 13) {
-          // Admin areas
-        } else {
+          // TODO: Admin areas
         }
       } else {
         if (chkBuildings.checked) {
-          fetchNearestBuilding(lat, lng)
-          .then(data => displayNearestBuilding(data));
-        } else {
-          map.removeLayer(nearestBuilding);
+          findBuilding = true;
         }
 
         if (chkStreets.checked) {
-          // fetchNearestStreet(lat, lng)
-          // .then(data => displayNearestStreet(data));
-        } else {
-          // map.removeLayer(nearestStreet);
+          findStreet = true;
         }
 
         if (chkAdmins.checked) {
-        } else {
+          // TODO: Admin areas
         }
+      }
+
+      if (findBuilding && findStreet) {
+        fetchNearestBuilding(lat, lng)
+        .then(building => {
+          fetchNearestStreet(lat, lng)
+          .then(street => {
+            if (building.distance < street.distance) {
+              displayNearestBuilding(building);
+            } else {
+              displayNearestStreet(street);
+            }
+          });
+        });
+      } else if (findBuilding && !findStreet) {
+        fetchNearestBuilding(lat, lng)
+        .then(building => displayNearestBuilding(building));
+      } else if (!findBuilding && findStreet) {
+        fetchNearestStreet(lat, lng)
+        .then(street => displayNearestStreet(street));
+      }
+
+      if (!findBuilding && nearestBuilding) {
+          map.removeLayer(nearestBuilding);
+      }
+
+      if (!findStreet && nearestStreet) {
+          map.removeLayer(nearestStreet);
       }
     });
   </script>
