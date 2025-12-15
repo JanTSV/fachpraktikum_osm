@@ -427,7 +427,7 @@ class KDSolution : public ISolution {
             return json.str();
         }
 
-        std::string get_nearest_building(double lat, double lon) const {
+        std::string get_nearest_building(double lat, double lon) const override {
             Point target(lat, lon);
             auto nearest_building = _buildings_tree.find_nearest(target);
             if (!nearest_building) return "[]";
@@ -452,6 +452,28 @@ class KDSolution : public ISolution {
             }
             json << "\"distance\":" << building.location.haversine_distance(target);
 
+            json << "}";
+            return json.str();
+        }
+
+        std::string get_nearest_street(double lat, double lon) const override {
+            Point target(lat, lon);
+            auto nearest_street = _streets_tree.find_nearest(target);
+            if (!nearest_street) return "[]";
+
+            const Street& street = _streets[*nearest_street];
+            std::ostringstream json;
+            json << "{";
+            json << "\"name\":\"" << _string_store.get(street.name_idx) << "\",";
+            json << "\"points\":[";
+            double min_distance = std::numeric_limits<double>::max();
+            for (size_t i = 0; i < street.points.size(); i++) {
+                json << "[" << street.points[i].x << "," << street.points[i].y << "]";
+                if (i + 1 < street.points.size()) json << ",";
+                min_distance = std::min(min_distance, street.points[i].haversine_distance(target));
+            }
+            json << "],";
+            json << "\"distance\":" << min_distance;
             json << "}";
             return json.str();
         }
@@ -814,6 +836,18 @@ int main(int argc, char* argv[]) {
         }
         res.status = 200;
         res.set_content(solution.get_nearest_building(lat, lon), "application/json");
+    });
+
+    svr.Post("/nearest_street", [&solution](const httplib::Request &req, httplib::Response &res) {
+        double lat, lon;
+        bool ok = (sscanf(req.body.c_str(), R"({"lat":%lf,"lon":%lf})", &lat, &lon) == 2);
+        if (!ok) {
+            res.status = 400;
+            res.set_content("Invalid JSON format", "text/plain");
+            return;
+        }
+        res.status = 200;
+        res.set_content(solution.get_nearest_street(lat, lon), "application/json");
     });
 
     std::cout << "Server started at http://localhost:" << configuration.port << std::endl;

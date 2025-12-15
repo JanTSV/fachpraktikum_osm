@@ -188,7 +188,6 @@
       });
     }
 
-    let nearestBuilding = null;
     async function fetchNearestBuilding(lat, lon) {
       const response = await fetch('/nearest_building', {
         method: 'POST',
@@ -202,22 +201,58 @@
         return null;
       }
 
+      return data;
+    }
+
+    let nearestBuilding = null;
+    function displayNearestBuilding(building) {
       // Remove previous marker if it exists
       if (nearestBuilding) map.removeLayer(nearestBuilding);
 
       let popupText = "";
-      if (data.address) popupText += data.address;
-      if (data.house_number) popupText += " " + data.house_number;
+      if (building.address) popupText += building.address;
+      if (building.house_number) popupText += " " + building.house_number;
 
-      nearestBuilding = L.circleMarker([data.lat, data.lon], {
+      nearestBuilding = L.circleMarker([building.lat, building.lon], {
         radius: 5,
         color: 'red'
       })
         .addTo(map)
         .bindPopup(popupText)
         .openPopup();
+    }
 
-      return data.distance;
+    async function fetchNearestStreet(lat, lon) {
+      const response = await fetch('/nearest_street', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lat: lat, lon: lon }) // fixed lng → lon
+      });
+
+      const data = await response.json();
+
+
+      if (!data || !data.name || !data.points || !data.distance) {
+        return null;
+      }
+
+      return data;
+    }
+
+    let nearestStreet = null;
+    function displayNearestStreet(street) {
+      // Remove previous marker if it exists
+      if (nearestStreet) map.removeLayer(nearestStreet);
+
+      let popupText = "";
+      if (street.name) popupText += street.name;
+      else popupText += "<unknown street>"
+
+      const latlngs = street.points.map(p => [p[0], p[1]]);
+      nearestStreet = L.polyline(latlngs, { color: 'red', weight: 8 })
+        .addTo(streetsLayer)
+        .bindPopup(popupText)
+        .openPopup();
     }
 
     map.whenReady(() => {
@@ -236,14 +271,18 @@
         const zoom = map.getZoom();
         if (zoom >= 15) {
           // Buildings
-          fetchNearestBuilding(lat, lng);
+          fetchNearestBuilding(lat, lng)
+          .then(data => displayNearestBuilding(data));
         } else {
           map.removeLayer(nearestBuilding);
         }
         
         if (zoom >= 13) {
           // Streets
+          fetchNearestStreet(lat, lng)
+          .then(data => displayNearestStreet(data));
         } else {
+          map.removeLayer(nearestStreet);
         }
 
         if (zoom < 13) {
@@ -252,13 +291,17 @@
         }
       } else {
         if (chkBuildings.checked) {
-          fetchNearestBuilding(lat, lng);
+          fetchNearestBuilding(lat, lng)
+          .then(data => displayNearestBuilding(data));
         } else {
           map.removeLayer(nearestBuilding);
         }
 
         if (chkStreets.checked) {
+          // fetchNearestStreet(lat, lng)
+          // .then(data => displayNearestStreet(data));
         } else {
+          // map.removeLayer(nearestStreet);
         }
 
         if (chkAdmins.checked) {
