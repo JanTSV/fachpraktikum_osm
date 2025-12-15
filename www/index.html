@@ -68,16 +68,22 @@
         if (zoom >= 15) {
           map.addLayer(buildingsLayer);
           fetchBuildings(boundingBox);
+        } else {
+          map.removeLayer(buildingsLayer);
         }
         
         if (zoom >= 13) {
           map.addLayer(streetsLayer);
           fetchStreets(boundingBox);
+        } else {
+          map.removeLayer(streetsLayer);
         }
 
         if (zoom < 13) {
           map.addLayer(adminLayer);
           fetchAdminAreas(boundingBox);
+        } else {
+          map.removeLayer(adminLayer);
         }
       } else {
         if (chkBuildings.checked) {
@@ -182,6 +188,38 @@
       });
     }
 
+    let nearestBuilding = null;
+    async function fetchNearestBuilding(lat, lon) {
+      const response = await fetch('/nearest_building', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lat: lat, lon: lon }) // fixed lng → lon
+      });
+
+      const data = await response.json();
+
+      if (!data || !data.lat || !data.lon || !data.distance) {
+        return null;
+      }
+
+      // Remove previous marker if it exists
+      if (nearestBuilding) map.removeLayer(nearestBuilding);
+
+      let popupText = "";
+      if (data.address) popupText += data.address;
+      if (data.house_number) popupText += " " + data.house_number;
+
+      nearestBuilding = L.circleMarker([data.lat, data.lon], {
+        radius: 5,
+        color: 'red'
+      })
+        .addTo(map)
+        .bindPopup(popupText)
+        .openPopup();
+
+      return data.distance;
+    }
+
     map.whenReady(() => {
       dynamicVisibilityChecked();
     });
@@ -191,34 +229,42 @@
     });
       
     // NEAREST
-    let nearestMarker = null;
     map.on('click', e => {
       const { lat, lng } = e.latlng;
       
-      fetch('/nearest', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lat: lat, lon: lng })
-      })
-      .then(r => r.json())
-      .then(data => {
-        if (!data || !data.lat || !data.lon || !data.distance) return;
+      if (chkDynamic.checked) {
+        const zoom = map.getZoom();
+        if (zoom >= 15) {
+          // Buildings
+          fetchNearestBuilding(lat, lng);
+        } else {
+          map.removeLayer(nearestBuilding);
+        }
+        
+        if (zoom >= 13) {
+          // Streets
+        } else {
+        }
 
-        console.log(data.distance);
+        if (zoom < 13) {
+          // Admin areas
+        } else {
+        }
+      } else {
+        if (chkBuildings.checked) {
+          fetchNearestBuilding(lat, lng);
+        } else {
+          map.removeLayer(nearestBuilding);
+        }
 
-        // Remove previous marker if it exists
-        if (nearestMarker) map.removeLayer(nearestMarker);
+        if (chkStreets.checked) {
+        } else {
+        }
 
-        // Add marker
-        let popupText = "";
-        if (data.address) popupText += data.address;
-        if (data.house_number) popupText += " " + data.house_number;
-
-        nearestMarker = L.circleMarker([data.lat, data.lon], { radius: 5, color: 'red' })
-          .addTo(map)
-          .bindPopup(popupText)
-          .openPopup();
-      });
+        if (chkAdmins.checked) {
+        } else {
+        }
+      }
     });
   </script>
 </body>

@@ -803,8 +803,8 @@ int main(int argc, char* argv[]) {
         res.set_content(solution.get_admin_areas_in_view(sw_lat, sw_lon, ne_lat, ne_lon), "application/json");
     });
 
-    // API endpoint for reverse geocoder
-    svr.Post("/nearest", [&solution](const httplib::Request &req, httplib::Response &res) {
+    // API endpoints for reverse geocoder
+    svr.Post("/nearest_building", [&solution](const httplib::Request &req, httplib::Response &res) {
         double lat, lon;
         bool ok = (sscanf(req.body.c_str(), R"({"lat":%lf,"lon":%lf})", &lat, &lon) == 2);
         if (!ok) {
