@@ -108,7 +108,6 @@ public:
     AdminArea(size_t name_idx, std::vector<Point> boundary, uint8_t level);
 
     bool point_in_polygon(const Point& p) const;
-    bool point_in_polygon_fast(const Point& p) const;
 
 private:
 

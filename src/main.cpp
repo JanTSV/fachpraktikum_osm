@@ -478,6 +478,66 @@ class KDSolution : public ISolution {
             return json.str();
         }
 
+        std::string get_nearest_admin_area(double lat, double lon) const override {
+            Point target(lat, lon);
+            Point projected_target = Point::project_mercator(lat, lon);
+
+            
+            const AdminArea* nearest_area = nullptr;
+            double min_distance = std::numeric_limits<double>::max();
+            bool done = false;
+            // Iterate over all (filtered) areas by level (higher level = more local area)
+            // If clicked point is within an area, return it isntantly, otherwise keep track
+            // of the nearest area.
+            for (auto it = _hierarchical_admin_areas_trees.rbegin();
+                it != _hierarchical_admin_areas_trees.rend() && !done;
+                ++it) {
+                uint8_t level = it->first;
+                const auto& area_level = it->second;
+
+                std::vector<size_t> area_candidates = area_level.tree.range_search(
+                    projected_target.x - area_level.max_half_width, 
+                    projected_target.y - area_level.max_half_height, 
+                    projected_target.x + area_level.max_half_width, 
+                    projected_target.y + area_level.max_half_height);
+
+                for (const size_t a : area_candidates) {
+                    const AdminArea& area = _hierarchical_admin_areas.at(level).at(a);
+                    if (area.point_in_polygon(target)) {
+                        nearest_area = &area;
+                        done = true;
+                        min_distance = 0.0;
+                        break;
+                    } else {
+                        for (size_t i = 0; i < area.boundary.size(); i++) {
+                            const double distance = area.boundary[i].haversine_distance(target);
+                            if (min_distance > distance) {
+                                min_distance = distance;
+                                nearest_area = &area;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (!nearest_area) return "[]";
+
+            std::ostringstream json;
+            json << "{";
+            
+            json << "\"name\":\"" << _string_store.get(nearest_area->name_idx) << "\",";
+            json << "\"points\":[";
+            for (size_t i = 0; i < nearest_area->boundary.size(); i++) {
+                json << "[" << nearest_area->boundary[i].x << "," << nearest_area->boundary[i].y << "]";
+                if (i + 1 < nearest_area->boundary.size()) json << ",";
+            }
+            json << "],";
+            json << "\"distance\":" << min_distance;
+            json << "}";
+            return json.str();
+        }
+
         void preprocess() override {
             std::vector<std::pair<Point, size_t>> pts;
 
@@ -527,7 +587,7 @@ class KDSolution : public ISolution {
 
                     for (const size_t a : area_candidates) {
                         const AdminArea& area = _hierarchical_admin_areas[level][a];
-                        if (area.point_in_polygon_fast(p)) {
+                        if (area.point_in_polygon(p)) {
                             address.push_back(area.name_idx);
                             break;
                         }
@@ -848,6 +908,18 @@ int main(int argc, char* argv[]) {
         }
         res.status = 200;
         res.set_content(solution.get_nearest_street(lat, lon), "application/json");
+    });
+
+    svr.Post("/nearest_admin_area", [&solution](const httplib::Request &req, httplib::Response &res) {
+        double lat, lon;
+        bool ok = (sscanf(req.body.c_str(), R"({"lat":%lf,"lon":%lf})", &lat, &lon) == 2);
+        if (!ok) {
+            res.status = 400;
+            res.set_content("Invalid JSON format", "text/plain");
+            return;
+        }
+        res.status = 200;
+        res.set_content(solution.get_nearest_admin_area(lat, lon), "application/json");
     });
 
     std::cout << "Server started at http://localhost:" << configuration.port << std::endl;

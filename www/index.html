@@ -32,7 +32,7 @@
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script>
     const map = L.map('map').setView([48.836811, 9.258703], 16);
-
+    
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
@@ -181,7 +181,7 @@
       .then(admin_areas => {
         admin_areas.forEach(admin_area => {
           const latlngs = admin_area.points.map(p => [p[0], p[1]]);
-          L.polygon(latlngs, { color: 'red', weight: 4, fillOpacity: 0.1 })
+          L.polygon(latlngs, { color: 'red', weight: 4, fillOpacity: 0.1, interactive: false })
             .addTo(adminLayer)
             .bindPopup(admin_area.name);
         });
@@ -206,8 +206,7 @@
 
     let nearestBuilding = null;
     function displayNearestBuilding(building) {
-      // Remove previous marker if it exists
-      if (nearestBuilding) map.removeLayer(nearestBuilding);
+      if (!building) return;
 
       let popupText = "";
       if (building.address) popupText += building.address;
@@ -231,7 +230,6 @@
 
       const data = await response.json();
 
-
       if (!data || !data.name || !data.points || !data.distance) {
         return null;
       }
@@ -241,16 +239,44 @@
 
     let nearestStreet = null;
     function displayNearestStreet(street) {
-      // Remove previous marker if it exists
-      if (nearestStreet) map.removeLayer(nearestStreet);
+      if (!street) return;
 
       let popupText = "";
       if (street.name) popupText += street.name;
-      else popupText += "<unknown street>"
+      else popupText += "<unknown street>";
 
       const latlngs = street.points.map(p => [p[0], p[1]]);
       nearestStreet = L.polyline(latlngs, { color: 'red', weight: 8 })
         .addTo(streetsLayer)
+        .bindPopup(popupText)
+        .openPopup();
+    }
+
+    async function fetchNearestAdminArea(lat, lon) {
+      const response = await fetch('/nearest_admin_area', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lat: lat, lon: lon }) // fixed lng → lon
+      });
+
+      const data = await response.json();
+      if (!data || !data.name || !data.points || data.distance == null) {
+        return null;
+      }
+
+      return data;
+    }
+
+    let nearestAdminArea = null;
+    function displayNearestAdminArea(admin_area) {
+      if (!admin_area) return;
+
+      let popupText = "";
+      if (admin_area.name) popupText += admin_area.name;
+      else popupText += "<unknown street>";
+      const latlngs = admin_area.points.map(p => [p[0], p[1]]);
+      nearestAdminArea = L.polygon(latlngs, { color: 'green', weight: 8, fillOpacity: 0.5 })
+        .addTo(adminLayer)
         .bindPopup(popupText)
         .openPopup();
     }
@@ -265,10 +291,15 @@
       
     // NEAREST
     map.on('click', e => {
-      const { lat, lng } = e.latlng;
+      // Remove previous markers
+      if (nearestBuilding) map.removeLayer(nearestBuilding);
+      if (nearestStreet) map.removeLayer(nearestStreet);
+      if (nearestAdminArea) map.removeLayer(nearestAdminArea);
 
+      const { lat, lng } = e.latlng;
       let findBuilding = false;
       let findStreet = false;
+      let findAdminArea = false;
       
       if (chkDynamic.checked) {
         const zoom = map.getZoom();
@@ -283,7 +314,8 @@
         }
 
         if (zoom < 13) {
-          // TODO: Admin areas
+          // Admin areas
+          findAdminArea = true;
         }
       } else {
         if (chkBuildings.checked) {
@@ -295,11 +327,11 @@
         }
 
         if (chkAdmins.checked) {
-          // TODO: Admin areas
+          findAdminArea = true;
         }
       }
 
-      if (findBuilding && findStreet) {
+      if (findBuilding && findStreet && !findAdminArea) {
         fetchNearestBuilding(lat, lng)
         .then(building => {
           fetchNearestStreet(lat, lng)
@@ -311,20 +343,62 @@
             }
           });
         });
-      } else if (findBuilding && !findStreet) {
+      } else if (findBuilding && !findStreet && !findAdminArea) {
         fetchNearestBuilding(lat, lng)
         .then(building => displayNearestBuilding(building));
-      } else if (!findBuilding && findStreet) {
+      } else if (!findBuilding && findStreet && !findAdminArea) {
         fetchNearestStreet(lat, lng)
         .then(street => displayNearestStreet(street));
-      }
-
-      if (!findBuilding && nearestBuilding) {
-          map.removeLayer(nearestBuilding);
-      }
-
-      if (!findStreet && nearestStreet) {
-          map.removeLayer(nearestStreet);
+      } else if (findBuilding && findStreet && findAdminArea) {
+        fetchNearestBuilding(lat, lng)
+        .then(building => {
+          fetchNearestStreet(lat, lng)
+          .then(street => {
+            fetchNearestAdminArea(lat, lng)
+            .then(admin_area => {
+              if (building.distance < street.distance) {
+                if (admin_area.distance < building.distance) {
+                  displayNearestAdminArea(admin_area);
+                } else {
+                  displayNearestBuilding(building);
+                }
+              } else {
+                if (admin_area.distance < street.distance) {
+                  displayNearestAdminArea(admin_area);
+                } else {
+                  displayNearestStreet(street);
+                }
+              }
+            });
+          });
+        });
+      } else if (findBuilding && !findStreet && findAdminArea) {
+        fetchNearestBuilding(lat, lng)
+        .then(building => {
+          fetchNearestAdminArea(lat, lng)
+          .then(admin_area => {
+            if (building.distance < admin_area.distance) {
+              displayNearestBuilding(building);
+            } else {
+              displayNearestAdminArea(admin_area);
+            }
+          });
+        });
+      } else if (!findBuilding && findStreet && findAdminArea) {
+        fetchNearestStreet(lat, lng)
+        .then(street => {
+          fetchNearestAdminArea(lat, lng)
+          .then(admin_area => {
+            if (street.distance < admin_area.distance) {
+              displayNearestStreet(street);
+            } else {
+              displayNearestAdminArea(admin_area);
+            }
+          });
+        });
+      } else if (!findBuilding && !findStreet && findAdminArea) {
+        fetchNearestAdminArea(lat, lng)
+        .then(admin_area => displayNearestAdminArea(admin_area));
       }
     });
   </script>

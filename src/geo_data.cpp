@@ -146,26 +146,6 @@ AdminArea::AdminArea(size_t name_idx, std::vector<Point> boundary, uint8_t level
 
 bool AdminArea::point_in_polygon(const Point& p) const {
     const Point projected = Point::project_mercator(p.x, p.y);
-    if (projected.x < bl.x || projected.x > tr.x || projected.y < bl.y || projected.y > tr.y) return false;
-
-     bool inside = false;
-     const size_t n = _projected_boundary.size();
-
-    for (size_t i = 0, j = n - 1; i < n; j = i++) {
-        const Point pi = _projected_boundary[i];
-        const Point pj = _projected_boundary[j];
-        if (((pi.y > projected.y) != (pj.y > projected.y)) &&
-            (projected.x < (pj.x - pi.x) * (projected.y - pi.y) / (pj.y - pi.y) + pi.x))
-        {
-            inside = !inside;
-        }
-    }
-
-    return inside;
-}
-
-bool AdminArea::point_in_polygon_fast(const Point& p) const {
-    const Point projected = Point::project_mercator(p.x, p.y);
     if (projected.x < bl.x || projected.x > tr.x || projected.y < bl.y || projected.y > tr.y)
         return false;
 
