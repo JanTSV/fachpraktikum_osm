@@ -71,20 +71,61 @@ Please acknowledge the order of the arguments in the `SYNOPSIS` block.
 
 Lets take the same example from above:
 ```bash
-./osm_release -p 8090 -bi stuttgart.bin
+./osm_release -bo stuttgart.bin stuttgart-regbez-251010.osm.pbf
 ```
 
 The output should look something like this:
 ```
-Loading binary data from stuttgart_naive.bin...
-Loaded binary data [907.84ms]
-Number of buildings: 3365587
-Number of streets: 195642
-Number of admin areas: 1474
-Server started at http://localhost:8090
+Parsing stuttgart-regbez-251010.osm.pbf...                                 
+Parsing done [6.54s]                                                       
+Number of buildings: 1683616                                                                                                                          
+Number of streets: 195645                                                                                                                             
+Number of admin areas: 1465                                                                                                                           
+Preprocessing...                                                           
+        Building hierarchical admin areas kdtrees...                                                                                                  
+        Hierarchical admin areas kdtrees built [300µs]                                                                                                
+        Point in polygon test for buildings using hierarchical admin areas...                                                                         
+        Assigned areas to buildings [3.64s]                                                                                                           
+        Building buildings kdtree...                                                                                                                  
+        KDtree built [513.40ms]                                            
+        Building streets kdtree...                                                                                                                    
+        KDtree built [411.48ms]                                                                                                                       
+        Interpolating street names for buildings without a street assigned to them...
+        Street names assigned [10.30s]                                                                                                                                                                                                                                   
+Preprocessing done [14.87s]    
+Serializing to stuttgart.bin...                                            
+Serialization done [2.05s]                                                 
+Server started at http://localhost:8080
 ```
 
-Now you can open `http://localhost:8090` in any browser and explore the hosted map. Each building should have a marker node on it.
+Now you can open `http://localhost:8080` in any browser and explore the hosted map.
+
+## Reverse Geocoder
+
+The hosted map should look like this:
+
+![Leaflet Map](imgs/map.png)
+
+In the top left corner the user can select what objects should be displayed:
+- **Building**: Shows all buildings in the current viewport. If the whole address is known, the marker will be blue, if the street was interpolated it will be green.
+- **Streets**: Shows all streets in the current viewport. Streets are orange lines.
+- **Admin areas**: Shows all admin areas in the current viewport. Admin areas are red opaque polygons.
+- **Dynamic** *(Recommended)*: Viewable objects are dynamically displayed depending on the zoom level. Other options cannot be selected if this is checked.
+
+Clicking on the map will select the nearest (visible) object and display the respective name.
+If the nearest object is a building, the whole address will be displayed.
+
+**Example**: Buildings and Streets checkboxes are checked. User clicks near a street:
+![Street selected](imgs/street.png)
+
+and later on top of a building:
+![Building selected](imgs/building.png)
+
+Each object will be marked with the color red and a popup box will display the name.
+
+**Example**: Dynamic object display is selected and user zoomed out a lot. Now clicks on an admin area:
+![Admin area selected](imgs/area.png)
+
 
 # Useful links
 - [geofabrik](https://download.geofabrik.de/index.html)
