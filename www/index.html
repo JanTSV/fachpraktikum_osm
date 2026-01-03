@@ -184,8 +184,6 @@
     }
 
     function fetchAdminAreas(payload, filter_by_level) {
-      const zoom = map.getZoom();
-
       fetch('/admin_areas', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -196,7 +194,7 @@
         admin_areas.forEach(admin_area => {
           // console.log("zoom:", zoom, "filter_by_level:", filter_by_level);
           if (filter_by_level) {
-            let expectedLevel = getAdminLevelForZoom(zoom);
+            let expectedLevel = getAdminLevelForZoom(map.getZoom());
             //console.log("expectedLevel:", expectedLevel);
             if (!expectedLevel) expectedLevel = admin_area.level;
             if (expectedLevel != admin_area.level) return;
@@ -281,11 +279,14 @@
         .openPopup();
     }
 
-    async function fetchNearestAdminArea(lat, lon) {
+    async function fetchNearestAdminArea(lat, lon, filter_by_level) {
+      let expectedLevel = getAdminLevelForZoom(map.getZoom());
+      if (!expectedLevel) expectedLevel = -1;
+      let filter = filter_by_level ? 1 : 0;
       const response = await fetch('/nearest_admin_area', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lat: lat, lon: lon })
+        body: JSON.stringify({ lat: lat, lon: lon, filter: filter, expectedLevel: expectedLevel })
       });
 
       const data = await response.json();
@@ -390,7 +391,7 @@
         .then(building => {
           fetchNearestStreet(lat, lng)
           .then(street => {
-            fetchNearestAdminArea(lat, lng)
+            fetchNearestAdminArea(lat, lng, chkDynamic.checked)
             .then(admin_area => {
               if (building.distance < street.distance) {
                 if (admin_area.distance < building.distance) {
@@ -411,7 +412,7 @@
       } else if (findBuilding && !findStreet && findAdminArea) {
         fetchNearestBuilding(lat, lng)
         .then(building => {
-          fetchNearestAdminArea(lat, lng)
+          fetchNearestAdminArea(lat, lng, chkDynamic.checked)
           .then(admin_area => {
             if (building.distance < admin_area.distance) {
               displayNearestBuilding(building);
@@ -423,7 +424,7 @@
       } else if (!findBuilding && findStreet && findAdminArea) {
         fetchNearestStreet(lat, lng)
         .then(street => {
-          fetchNearestAdminArea(lat, lng)
+          fetchNearestAdminArea(lat, lng, chkDynamic.checked)
           .then(admin_area => {
             if (street.distance < admin_area.distance) {
               displayNearestStreet(street);
@@ -433,7 +434,7 @@
           });
         });
       } else if (!findBuilding && !findStreet && findAdminArea) {
-        fetchNearestAdminArea(lat, lng)
+        fetchNearestAdminArea(lat, lng, chkDynamic.checked)
         .then(admin_area => displayNearestAdminArea(admin_area));
       }
     });

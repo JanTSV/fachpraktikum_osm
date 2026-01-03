@@ -492,7 +492,7 @@ class KDSolution : public ISolution {
             return json.str();
         }
 
-        std::string get_nearest_admin_area(double lat, double lon) const override {
+        std::string get_nearest_admin_area(double lat, double lon, int filter, int expected_level) const override {
             Point target(lat, lon);
             Point projected_target = Point::project_mercator(lat, lon);
 
@@ -509,6 +509,9 @@ class KDSolution : public ISolution {
 
                 uint8_t level = it->first;
                 const auto& area_level = it->second;
+                
+                // Filter out unexpected levels
+                if (filter && level != expected_level) continue;
 
                 std::vector<size_t> area_candidates =
                     area_level.tree.range_search(
@@ -938,14 +941,15 @@ int main(int argc, char* argv[]) {
 
     svr.Post("/nearest_admin_area", [&solution](const httplib::Request &req, httplib::Response &res) {
         double lat, lon;
-        bool ok = (sscanf(req.body.c_str(), R"({"lat":%lf,"lon":%lf})", &lat, &lon) == 2);
+        int filter, expected_level;
+        bool ok = (sscanf(req.body.c_str(), R"({"lat":%lf,"lon":%lf,"filter":%d,"expectedLevel":%d})", &lat, &lon, &filter, &expected_level) == 4);
         if (!ok) {
             res.status = 400;
             res.set_content("Invalid JSON format", "text/plain");
             return;
         }
         res.status = 200;
-        res.set_content(solution.get_nearest_admin_area(lat, lon), "application/json");
+        res.set_content(solution.get_nearest_admin_area(lat, lon, filter, expected_level), "application/json");
     });
 
     std::cout << "Server started at http://localhost:" << configuration.port << std::endl;

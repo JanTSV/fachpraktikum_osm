@@ -16,7 +16,7 @@ class ISolution {
         virtual std::string get_admin_areas_in_view(double sw_lat, double sw_lon, double ne_lat, double ne_lon) const = 0;
         virtual std::string get_nearest_building(double lat, double lon) const = 0;
         virtual std::string get_nearest_street(double lat, double lon) const = 0;
-        virtual std::string get_nearest_admin_area(double lat, double lon) const = 0;
+        virtual std::string get_nearest_admin_area(double lat, double lon, int filter, int expected_level) const = 0;
         virtual void serialize(const std::string& path) const = 0;
         virtual void preprocess() = 0;
 };
