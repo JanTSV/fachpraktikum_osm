@@ -416,6 +416,7 @@ class KDSolution : public ISolution {
 
                     json << "{";
                     json << "\"name\":\"" << _string_store.get(area.name_idx) << "\",";
+                    json << "\"level\":" << int(level) << ",";
                     json << "\"polygons\":[";
 
                     for (size_t r = 0; r < area.boundaries.size(); ++r) {

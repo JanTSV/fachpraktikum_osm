@@ -81,7 +81,7 @@
 
         if (zoom < 13) {
           map.addLayer(adminLayer);
-          fetchAdminAreas(boundingBox);
+          fetchAdminAreas(boundingBox, true);
         } else {
           map.removeLayer(adminLayer);
         }
@@ -102,7 +102,7 @@
 
         if (chkAdmins.checked) {
           map.addLayer(adminLayer);
-          fetchAdminAreas(boundingBox);
+          fetchAdminAreas(boundingBox, false);
         } else {
           map.removeLayer(adminLayer);
         }
@@ -171,7 +171,21 @@
       });
     }
 
-    function fetchAdminAreas(payload) {
+    function getAdminLevelForZoom(zoom) {
+      if (zoom <= 2) return 1;
+      if (zoom <= 4) return 2;
+      if (zoom <= 6) return 3;
+      if (zoom === 7) return 4;
+      if (zoom === 8) return 5;
+      if (zoom === 9) return 6;
+      if (zoom === 10) return 7;
+      if (zoom === 11) return 8;
+      return null;
+    }
+
+    function fetchAdminAreas(payload, filter_by_level) {
+      const zoom = map.getZoom();
+
       fetch('/admin_areas', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -180,6 +194,14 @@
       .then(r => r.json())
       .then(admin_areas => {
         admin_areas.forEach(admin_area => {
+          // console.log("zoom:", zoom, "filter_by_level:", filter_by_level);
+          if (filter_by_level) {
+            let expectedLevel = getAdminLevelForZoom(zoom);
+            //console.log("expectedLevel:", expectedLevel);
+            if (!expectedLevel) expectedLevel = admin_area.level;
+            if (expectedLevel != admin_area.level) return;
+          }
+
           admin_area.polygons.forEach(ring => {
             const latlngs = ring.map(p => [p[0], p[1]]);
             L.polygon(latlngs, {
@@ -199,7 +221,7 @@
       const response = await fetch('/nearest_building', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lat: lat, lon: lon }) // fixed lng → lon
+        body: JSON.stringify({ lat: lat, lon: lon })
       });
 
       const data = await response.json();
@@ -232,7 +254,7 @@
       const response = await fetch('/nearest_street', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lat: lat, lon: lon }) // fixed lng → lon
+        body: JSON.stringify({ lat: lat, lon: lon })
       });
 
       const data = await response.json();
@@ -263,7 +285,7 @@
       const response = await fetch('/nearest_admin_area', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lat: lat, lon: lon }) // fixed lng → lon
+        body: JSON.stringify({ lat: lat, lon: lon })
       });
 
       const data = await response.json();
@@ -290,7 +312,8 @@
           fillOpacity: 0.5
         })
         .addTo(nearestAdminArea)
-        .bindPopup(popupText);
+        .bindPopup(popupText)
+        .openPopup();;
       });
     }
 
