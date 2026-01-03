@@ -99,34 +99,34 @@ private:
 struct AdminArea {
 public:
     size_t name_idx;
-    std::vector<Point> boundary;
+    std::vector<std::vector<Point>> boundaries;
     Point bl;  // Bounding box
     Point tr;
     uint8_t level;
 
     AdminArea();
-    AdminArea(size_t name_idx, std::vector<Point> boundary, uint8_t level);
+    AdminArea(size_t name_idx, std::vector<std::vector<Point>> boundaries, uint8_t level);
 
     bool point_in_polygon(const Point& p) const;
 
 private:
 
-    std::vector<Point> _projected_boundary;
-    std::vector<Edge> _edges;
-    std::vector<std::vector<size_t>> _bins;
-    double _bin_height;
+    std::vector<std::vector<Point>> _projected_boundaries;
+    std::vector<std::vector<Edge>> _edges;
+    std::vector<std::vector<std::vector<size_t>>> _bins;
+    std::vector<double> _bin_heights;
 
     friend class boost::serialization::access;
     template<class Archive>
     void serialize(Archive& ar, const unsigned int /*version*/) {
         ar & name_idx;
-        ar & boundary;
+        ar & boundaries;
         ar & level;
         ar & bl;
         ar & tr;
-        ar & _projected_boundary;
+        ar & _projected_boundaries;
         ar & _edges;
         ar & _bins;
-        ar & _bin_height;
+        ar & _bin_heights;
     }
 };

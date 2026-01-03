@@ -108,15 +108,22 @@ void OSMHandler::area(const osmium::Area& area) {
             return;
         }
         
-        std::vector<Point> points;
-        for (const auto& p : *area.cbegin<osmium::OuterRing>()) {
-            if (p.location().valid()) {
-                points.emplace_back(p.lat(), p.lon());
+        std::vector<std::vector<Point>> rings;
+
+        for (const auto& ring : area.outer_rings()) {
+            std::vector<Point> points;
+            for (const auto& p : ring) {
+                if (p.location().valid()) {
+                    points.emplace_back(p.lat(), p.lon());
+                }
+            }
+            if (!points.empty()) {
+                rings.push_back(std::move(points));
             }
         }
 
-        if (!points.empty()) {
-            _solution.add_admin_area(name, std::move(points), level);
+        if (!rings.empty()) {
+            _solution.add_admin_area(name, std::move(rings), level);
         }
     }
 }

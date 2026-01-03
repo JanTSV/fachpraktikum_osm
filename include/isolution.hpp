@@ -7,7 +7,7 @@ class ISolution {
         virtual ~ISolution() {}
         virtual void add_building(double lat, double lon, const char* street, std::optional<HouseNumber> house_number) = 0;
         virtual void add_street(const char* name, std::vector<Point> points) = 0;
-        virtual void add_admin_area(const char* name, std::vector<Point> boundary, uint8_t level) = 0;
+        virtual void add_admin_area(const char* name, std::vector<std::vector<Point>> boundaries, uint8_t level) = 0;
         virtual size_t num_buildings() const = 0;
         virtual size_t num_streets() const = 0;
         virtual size_t num_admin_areas() const = 0;

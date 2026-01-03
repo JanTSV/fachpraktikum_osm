@@ -31,7 +31,7 @@
   <div id="map"></div>
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script>
-    const map = L.map('map').setView([48.836811, 9.258703], 16);
+    const map = L.map('map').setView([49.0503, 9.3969], 16);//.setView([48.836811, 9.258703], 16);
     
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors'
@@ -180,10 +180,17 @@
       .then(r => r.json())
       .then(admin_areas => {
         admin_areas.forEach(admin_area => {
-          const latlngs = admin_area.points.map(p => [p[0], p[1]]);
-          L.polygon(latlngs, { color: 'red', weight: 4, fillOpacity: 0.1, interactive: false })
+          admin_area.polygons.forEach(ring => {
+            const latlngs = ring.map(p => [p[0], p[1]]);
+            L.polygon(latlngs, {
+              color: 'red',
+              weight: 4,
+              fillOpacity: 0.1,
+              interactive: false
+            })
             .addTo(adminLayer)
             .bindPopup(admin_area.name);
+          });
         });
       });
     }
@@ -260,7 +267,7 @@
       });
 
       const data = await response.json();
-      if (!data || !data.name || !data.points || data.distance == null) {
+      if (!data || !data.name || !data.polygons || data.distance == null) {
         return null;
       }
 
@@ -271,14 +278,20 @@
     function displayNearestAdminArea(admin_area) {
       if (!admin_area) return;
 
-      let popupText = "";
-      if (admin_area.name) popupText += admin_area.name;
-      else popupText += "<unknown street>";
-      const latlngs = admin_area.points.map(p => [p[0], p[1]]);
-      nearestAdminArea = L.polygon(latlngs, { color: 'green', weight: 8, fillOpacity: 0.5 })
-        .addTo(adminLayer)
-        .bindPopup(popupText)
-        .openPopup();
+      let popupText = admin_area.name || "<unknown admin area>";
+
+      nearestAdminArea = L.layerGroup().addTo(adminLayer);
+
+      admin_area.polygons.forEach(ring => {
+        const latlngs = ring.map(p => [p[0], p[1]]);
+        L.polygon(latlngs, {
+          color: 'green',
+          weight: 8,
+          fillOpacity: 0.5
+        })
+        .addTo(nearestAdminArea)
+        .bindPopup(popupText);
+      });
     }
 
     map.whenReady(() => {

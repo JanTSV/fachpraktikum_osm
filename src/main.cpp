@@ -307,9 +307,9 @@ class KDSolution : public ISolution {
             _streets.emplace_back(_string_store.get_or_add(name), points);
         }
 
-        void add_admin_area(const char* name, std::vector<Point> boundary, uint8_t level) override {
+        void add_admin_area(const char* name, std::vector<std::vector<Point>> boundaries, uint8_t level) override {
             if (!name) return;
-            AdminArea area(_string_store.get_or_add(name), boundary, level);
+            AdminArea area(_string_store.get_or_add(name), boundaries, level);
             _hierarchical_admin_areas[level].push_back(area);
         }
 
@@ -384,45 +384,58 @@ class KDSolution : public ISolution {
             return json.str();
         }
 
-        std::string get_admin_areas_in_view(double sw_lat, double sw_lon, double ne_lat, double ne_lon) const override {
+        std::string get_admin_areas_in_view(double sw_lat, double sw_lon,
+                                            double ne_lat, double ne_lon) const override {
             std::ostringstream json;
             json << "[";
 
             Point projected_bl = Point::project_mercator(sw_lat, sw_lon);
             Point projected_tr = Point::project_mercator(ne_lat, ne_lon);
-            
+
             bool first = true;
+
             for (const auto& [level, area_level] : _hierarchical_admin_areas_trees) {
                 std::unordered_set<size_t> areas_in_view;
-                std::vector<size_t> areas = area_level.tree.range_search(
-                    projected_bl.x - area_level.max_half_width, 
-                    projected_bl.y - area_level.max_half_height, 
-                    projected_tr.x + area_level.max_half_width, 
-                    projected_tr.y + area_level.max_half_height);
 
-                for (size_t area_idx : areas) {
-                    areas_in_view.insert(area_idx);
+                std::vector<size_t> candidates = area_level.tree.range_search(
+                    projected_bl.x - area_level.max_half_width,
+                    projected_bl.y - area_level.max_half_height,
+                    projected_tr.x + area_level.max_half_width,
+                    projected_tr.y + area_level.max_half_height
+                );
+
+                for (size_t idx : candidates) {
+                    areas_in_view.insert(idx);
                 }
 
                 for (size_t a : areas_in_view) {
-                    const auto &area = _hierarchical_admin_areas.at(level).at(a);
+                    const AdminArea& area = _hierarchical_admin_areas.at(level)[a];
 
                     if (!first) json << ",";
                     first = false;
 
-                    json << "{\"name\":\""
-                        << _string_store.get(area.name_idx)
-                        << "\",\"points\":[";
+                    json << "{";
+                    json << "\"name\":\"" << _string_store.get(area.name_idx) << "\",";
+                    json << "\"polygons\":[";
 
-                    for (size_t i = 0; i < area.boundary.size(); i++) {
-                        json << "[" << area.boundary[i].x << "," << area.boundary[i].y << "]";
-                        if (i + 1 < area.boundary.size()) json << ",";
+                    for (size_t r = 0; r < area.boundaries.size(); ++r) {
+                        if (r > 0) json << ",";
+                        json << "[";
+
+                        const auto& ring = area.boundaries[r];
+                        for (size_t i = 0; i < ring.size(); ++i) {
+                            json << "[" << ring[i].x << "," << ring[i].y << "]";
+                            if (i + 1 < ring.size()) json << ",";
+                        }
+
+                        json << "]";
                     }
 
-                    json << "]}";
+                    json << "]";
+                    json << "}";
                 }
             }
-            
+
             json << "]";
             return json.str();
         }
@@ -482,59 +495,71 @@ class KDSolution : public ISolution {
             Point target(lat, lon);
             Point projected_target = Point::project_mercator(lat, lon);
 
-            
             const AdminArea* nearest_area = nullptr;
             double min_distance = std::numeric_limits<double>::max();
             bool done = false;
+
             // Iterate over all (filtered) areas by level (higher level = more local area)
             // If clicked point is within an area, return it isntantly, otherwise keep track
             // of the nearest area.
             for (auto it = _hierarchical_admin_areas_trees.rbegin();
                 it != _hierarchical_admin_areas_trees.rend() && !done;
                 ++it) {
+
                 uint8_t level = it->first;
                 const auto& area_level = it->second;
 
-                std::vector<size_t> area_candidates = area_level.tree.range_search(
-                    projected_target.x - area_level.max_half_width, 
-                    projected_target.y - area_level.max_half_height, 
-                    projected_target.x + area_level.max_half_width, 
-                    projected_target.y + area_level.max_half_height);
+                std::vector<size_t> area_candidates =
+                    area_level.tree.range_search(
+                        projected_target.x - area_level.max_half_width,
+                        projected_target.y - area_level.max_half_height,
+                        projected_target.x + area_level.max_half_width,
+                        projected_target.y + area_level.max_half_height
+                    );
 
-                for (const size_t a : area_candidates) {
+                for (size_t a : area_candidates) {
                     const AdminArea& area = _hierarchical_admin_areas.at(level).at(a);
                     if (area.point_in_polygon(target)) {
                         nearest_area = &area;
-                        done = true;
                         min_distance = 0.0;
+                        done = true;
                         break;
-                    } else {
-                        for (size_t i = 0; i < area.boundary.size(); i++) {
-                            const double distance = area.boundary[i].haversine_distance(target);
-                            if (min_distance > distance) {
+                    }
+                    for (const auto& ring : area.boundaries) {
+                        for (const Point& p : ring) {
+                            double distance = p.haversine_distance(target);
+                            if (distance < min_distance) {
                                 min_distance = distance;
                                 nearest_area = &area;
-                                break;
                             }
                         }
                     }
                 }
             }
 
-            if (!nearest_area) return "[]";
+            if (!nearest_area)
+                return "[]";
 
             std::ostringstream json;
             json << "{";
-            
             json << "\"name\":\"" << _string_store.get(nearest_area->name_idx) << "\",";
-            json << "\"points\":[";
-            for (size_t i = 0; i < nearest_area->boundary.size(); i++) {
-                json << "[" << nearest_area->boundary[i].x << "," << nearest_area->boundary[i].y << "]";
-                if (i + 1 < nearest_area->boundary.size()) json << ",";
+            json << "\"polygons\":[";
+
+            for (size_t i = 0; i < nearest_area->boundaries.size(); ++i) {
+                const auto& ring = nearest_area->boundaries[i];
+                json << "[";
+                for (size_t j = 0; j < ring.size(); ++j) {
+                    json << "[" << ring[j].x << "," << ring[j].y << "]";
+                    if (j + 1 < ring.size()) json << ",";
+                }
+                json << "]";
+                if (i + 1 < nearest_area->boundaries.size()) json << ",";
             }
+
             json << "],";
             json << "\"distance\":" << min_distance;
             json << "}";
+
             return json.str();
         }
 
