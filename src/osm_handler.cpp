@@ -27,6 +27,14 @@ const char* OSMHandler::get_street_name(const osmium::TagList& tags) {
     return street;
 }
 
+const char* OSMHandler::get_shop_name(const osmium::TagList& tags) {
+    const char* street = tags["name:de"];
+    if (!street) {
+        street = tags["name"];
+    }
+    return street;
+}
+
 const char* OSMHandler::get_name(const osmium::TagList& tags) {
     const char* name = tags["name:de"];
     if (!name) {
@@ -58,7 +66,7 @@ void OSMHandler::node(const osmium::Node& node) {
     if (!node.location()) return;
 
     _solution.add_building(node.location().lat(), node.location().lon(),
-                           get_street_name(tags), get_house_number(tags));
+                           get_street_name(tags), get_house_number(tags), get_shop_name(tags));
 }
 
 void OSMHandler::way(const osmium::Way& way) {
@@ -87,7 +95,7 @@ void OSMHandler::area(const osmium::Area& area) {
 
         if (centroid) {
             _solution.add_building((*centroid).x, (*centroid).y,
-                                   get_street_name(tags), get_house_number(tags));
+                                   get_street_name(tags), get_house_number(tags), get_shop_name(tags));
         }
     } else if (is_admin_area(tags)) {
         const char* name = get_name(tags);

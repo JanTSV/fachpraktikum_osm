@@ -18,6 +18,7 @@ class OSMHandler : public osmium::handler::Handler {
         static bool is_admin_area(const osmium::TagList& tags);
 
         static const char* get_street_name(const osmium::TagList& tags);
+        static const char* get_shop_name(const osmium::TagList& tags);
         static const char* get_name(const osmium::TagList& tags);
         static std::optional<HouseNumber> get_house_number(const osmium::TagList& tags);
 

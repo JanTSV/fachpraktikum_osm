@@ -290,13 +290,17 @@ class KDTree {
 
 class KDSolution : public ISolution {
     public:
-        void add_building(double lat, double lon, const char* street, std::optional<HouseNumber> house_number) override {
+        void add_building(double lat, double lon, const char* street, std::optional<HouseNumber> house_number, const char* shop_name) override {
             // Add meta info to _buildings
             std::optional<size_t> street_idx;
             if (street) {
                 street_idx = _string_store.get_or_add(street);
             }
-            _buildings.emplace_back(Point(lat, lon), street_idx, house_number);
+            std::optional<size_t> shop_name_idx;
+            if (shop_name) {
+                shop_name_idx = _string_store.get_or_add(shop_name);
+            }
+            _buildings.emplace_back(Point(lat, lon), street_idx, house_number, shop_name_idx);
         }
 
         void add_street(const char* name, std::vector<Point> points) override {
@@ -454,6 +458,9 @@ class KDSolution : public ISolution {
 
             json << "\"address\":\"" << _string_store.get(building.address);
 
+            if (building.shop_name) {
+                json << _string_store.get(*building.shop_name) << ", ";
+            }
             if (building.street_idx) {
                 json << _string_store.get(*building.street_idx);
             }

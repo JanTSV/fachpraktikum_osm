@@ -44,10 +44,11 @@ public:
     Point location;
     std::optional<size_t> street_idx;
     std::optional<HouseNumber> house_number;
+    std::optional<size_t> shop_name;
     size_t address;
 
     Building();
-    Building(Point location, std::optional<size_t> street_idx, std::optional<HouseNumber> house_number);
+    Building(Point location, std::optional<size_t> street_idx, std::optional<HouseNumber> house_number, std::optional<size_t> shop_name);
 
 private:
     friend class boost::serialization::access;
@@ -56,6 +57,7 @@ private:
         ar & location;
         ar & street_idx;
         ar & house_number;
+        ar & shop_name;
         ar & address;
     }
 };
