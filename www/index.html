@@ -94,11 +94,17 @@
     const chkAdmins = document.getElementById("chkAdmins");
     const chkDynamic = document.getElementById("chkDynamic");
 
+    const resultsList = document.getElementById("searchResults");
+
     function onBuildingSearchSubmit(e) {
       e.preventDefault();
       const query = document.getElementById("searchInput").value.trim();
-      console.log("Search query:", query);
+      // console.log("Search query:", query);
     
+      resultsList.innerHTML = "";
+      
+      if (!query) return;
+
       fetch("/search_buildings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -107,6 +113,30 @@
       .then(r => r.json())
       .then(results => {
         console.log("Search results:", results);
+
+         if (!results.length) {
+          const li = document.createElement("li");
+          li.textContent = "No results";
+          li.style.cursor = "default";
+          resultsList.appendChild(li);
+          return;
+        }
+
+        results.forEach(building => {
+          const li = document.createElement("li");
+
+          let label = "";
+          if (building.address) label += building.address;
+          if (building.house_number) label += " " + building.house_number;
+
+          li.textContent = label || "(unnamed building)";
+
+          li.onclick = () => {
+            highlightBuilding(building);
+          };
+
+          resultsList.appendChild(li);
+        });
       })
     }
 
@@ -295,8 +325,13 @@
     }
 
     let nearestBuilding = null;
-    function displayNearestBuilding(building) {
+    function highlightBuilding(building) {
       if (!building) return;
+
+      if (nearestBuilding) {
+        map.removeLayer(nearestBuilding);
+        nearestBuilding = null;
+      }
 
       let popupText = "";
       if (building.address) popupText += building.address;
@@ -309,6 +344,10 @@
         .addTo(map)
         .bindPopup(popupText)
         .openPopup();
+
+      map.setView([building.lat, building.lon], Math.max(map.getZoom(), 17), {
+        animate: true
+      });
     }
 
     async function fetchNearestStreet(lat, lon) {
@@ -437,7 +476,7 @@
           fetchNearestStreet(lat, lng)
           .then(street => {
             if (building.distance < street.distance) {
-              displayNearestBuilding(building);
+              highlightBuilding(building);
             } else {
               displayNearestStreet(street);
             }
@@ -445,7 +484,7 @@
         });
       } else if (findBuilding && !findStreet && !findAdminArea) {
         fetchNearestBuilding(lat, lng)
-        .then(building => displayNearestBuilding(building));
+        .then(building => highlightBuilding(building));
       } else if (!findBuilding && findStreet && !findAdminArea) {
         fetchNearestStreet(lat, lng)
         .then(street => displayNearestStreet(street));
@@ -460,7 +499,7 @@
                 if (admin_area.distance < building.distance) {
                   displayNearestAdminArea(admin_area);
                 } else {
-                  displayNearestBuilding(building);
+                  highlightBuilding(building);
                 }
               } else {
                 if (admin_area.distance < street.distance) {
@@ -478,7 +517,7 @@
           fetchNearestAdminArea(lat, lng, chkDynamic.checked)
           .then(admin_area => {
             if (building.distance < admin_area.distance) {
-              displayNearestBuilding(building);
+              highlightBuilding(building);
             } else {
               displayNearestAdminArea(admin_area);
             }

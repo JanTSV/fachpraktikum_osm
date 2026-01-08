@@ -1381,8 +1381,7 @@ int main(int argc, char* argv[]) {
         }
 
         std::string q(query);
-        std::cout << "QUERY: " << q << std::endl;
-
+        
         res.status = 200;
         
         res.set_content(
