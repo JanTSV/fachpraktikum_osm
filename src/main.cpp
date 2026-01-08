@@ -6,11 +6,14 @@
 #include <chrono>
 #include <iomanip>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <ostream>
 #include <string>
+#include <vector>
 #include <fstream>
 #include <unordered_set>
+#include <unordered_map>
 
 #include <osmium/io/any_input.hpp>
 #include <osmium/osm/area.hpp>
@@ -27,7 +30,8 @@
 #include <boost/serialization/string.hpp>
 #include <boost/serialization/access.hpp>
 #include <boost/serialization/map.hpp>
-#include <vector>
+#include <boost/serialization/unordered_map.hpp>
+#include <boost/serialization/unordered_set.hpp>
 
 #include "httplib.h"
 #include "clipp.h"
@@ -59,6 +63,105 @@ std::string get_duration(const Duration& duration) {
 
     return out.str();
 }
+
+struct SuffixIndirect {
+    size_t string_id;  // String store index
+    size_t offset;  // Position in string
+    size_t length;  // Length of suffix
+
+    private:
+        friend class boost::serialization::access;
+        template<class Archive>
+        void serialize(Archive& ar, const unsigned int /*version*/) {
+            ar & string_id;
+            ar & offset;
+            ar & length;
+        }
+};
+
+struct SuffixTreeEdge {
+    SuffixIndirect suffix;
+    size_t child;
+
+    private:
+        friend class boost::serialization::access;
+        template<class Archive>
+        void serialize(Archive& ar, const unsigned int /*version*/) {
+            ar & suffix;
+            ar & child;
+        }
+};
+
+struct SuffixTreeNode {
+    std::unordered_map<char, SuffixTreeEdge> edges;
+    std::unordered_set<size_t> buildings;
+
+    private:
+        friend class boost::serialization::access;
+        template<class Archive>
+        void serialize(Archive& ar, const unsigned int /*version*/) {
+            ar & edges;
+            ar & buildings;
+        }
+};
+
+class SuffixTree {
+    public:
+        SuffixTree(MappedStringStore& string_store) : _string_store(string_store) {
+            // Create root node
+            _nodes.push_back(SuffixTreeNode{ });
+        }
+
+        void add_building(size_t building_idx, const Building& building) {
+            std::vector<SuffixIndirect> suffixes = build_address_suffixes(building);
+
+            for (size_t start = 0; start < suffixes.size(); start++) {
+                // TODO: insert_suffix(building_idx, suffixes, start, 0);
+            }
+        }
+
+    private:
+        MappedStringStore& _string_store;
+        std::vector<SuffixTreeNode> _nodes;
+
+        std::vector<SuffixIndirect> build_address_suffixes(const Building& building) {
+            std::vector<SuffixIndirect> suffixes;
+            
+            // Address
+            std::string_view s = _string_store.get(building.address);
+            suffixes.push_back({building.address, 0, s.size()});
+
+            // Shop name
+            if (building.shop_name) {
+                s = _string_store.get(*building.shop_name);
+                suffixes.push_back({*building.shop_name, 0, s.size()});
+            }
+
+            // Street
+            if (building.street_idx) {
+                s = _string_store.get(*building.street_idx);
+                suffixes.push_back({*building.street_idx, 0, s.size()});
+            }
+
+            // House number
+            if (building.house_number) {
+                const std::string house_number_string = std::to_string(*building.house_number);
+                size_t i = _string_store.get_or_add(house_number_string);
+                s = _string_store.get(i);
+                suffixes.push_back({i, 0, s.size()});
+
+            }
+
+            return suffixes;
+        }
+
+        friend class boost::serialization::access;
+        template<class Archive>
+        void serialize(Archive& ar, const unsigned int /*version*/) {
+            ar & _string_store;
+            ar & _nodes;
+        }
+};
 
 class KDTree {
     public:
@@ -290,6 +393,8 @@ class KDTree {
 
 class KDSolution : public ISolution {
     public:
+        KDSolution() : _suffix_tree(_string_store) { }
+
         void add_building(double lat, double lon, const char* street, std::optional<HouseNumber> house_number, const char* shop_name) override {
             // Add meta info to _buildings
             std::optional<size_t> street_idx;
@@ -686,6 +791,18 @@ class KDSolution : public ISolution {
             }
             end = std::chrono::high_resolution_clock::now();
             std::cout << "\tStreet names assigned " << get_duration(end - start) << std::endl;
+
+            // Build suffix tree
+            std::cout << "\tBuilding suffix tree..." << std::endl;
+            start = std::chrono::high_resolution_clock::now();
+
+            for (size_t i = 0; i < _buildings.size(); i++) {
+                const Building& building = _buildings[i];
+                _suffix_tree.add_building(i, building);
+            }
+
+            end = std::chrono::high_resolution_clock::now();
+            std::cout << "\tBuilt suffix tree " << get_duration(end - start) << std::endl;
         }
 
         void serialize(const std::string& path) const override {
@@ -738,6 +855,8 @@ class KDSolution : public ISolution {
             return _string_store.get_or_add(addr_string.str());
         }
 
+        SuffixTree _suffix_tree;
+
         friend class boost::serialization::access;
         template<class Archive>
         void serialize(Archive& ar, const unsigned int /*version*/) {
@@ -747,7 +866,7 @@ class KDSolution : public ISolution {
             ar & _streets_tree;
             ar & _streets;
             ar & _hierarchical_admin_areas_trees;
-            ar & _hierarchical_admin_areas;
+            ar & _suffix_tree;
         }
 };
 
