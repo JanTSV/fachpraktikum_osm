@@ -959,6 +959,29 @@ int main(int argc, char* argv[]) {
         res.set_content(solution.get_nearest_admin_area(lat, lon, filter, expected_level), "application/json");
     });
 
+    // API endpoint for geocoder
+    svr.Post("/search_buildings", [&solution](const httplib::Request& req, httplib::Response& res) {
+        char query[1024];
+
+        bool ok = (sscanf(req.body.c_str(), R"({"query":"%1023[^"]"})", query) == 1);
+        if (!ok) {
+            res.status = 400;
+            res.set_content("Invalid JSON", "text/plain");
+            return;
+        }
+
+        std::string q(query);
+        std::cout << "QUERY: " << q << std::endl;
+
+        res.status = 200;
+        res.set_content("[]", "application/json");
+        
+        // res.set_content(
+        //     solution.search_buildings(query),
+        //     "application/json"
+        // );
+    });
+
     std::cout << "Server started at http://localhost:" << configuration.port << std::endl;
     svr.listen("localhost", configuration.port);
 

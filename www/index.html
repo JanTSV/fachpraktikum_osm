@@ -18,6 +18,41 @@
       box-shadow: 0 0 6px rgba(0,0,0,0.3);
       font-family: sans-serif;
     }
+    
+    #search {
+      margin-top: 8px;
+    }
+
+    #searchInput {
+      width: 180px;
+      padding: 4px 6px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+
+    #searchResults {
+      list-style: none;
+      margin: 6px 0 0 0;
+      padding: 0;
+      max-height: 150px;
+      overflow-y: auto;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+
+    #searchResults li {
+      padding: 4px 6px;
+      cursor: pointer;
+      border-bottom: 1px solid #eee;
+    }
+
+    #searchResults li:hover {
+      background: #f0f0f0;
+    }
+
+    #searchResults li:last-child {
+      border-bottom: none;
+    }
   </style>
 </head>
 <body>
@@ -26,6 +61,18 @@
     <label><input type="checkbox" id="chkStreets" checked>Streets</label><br>
     <label><input type="checkbox" id="chkAdmins" checked>Admin areas</label><br>
     <label><input type="checkbox" id="chkDynamic" checked>Dynamic</label>
+
+    <div id="search">
+      <form onsubmit="onBuildingSearchSubmit(event)">
+        <input
+          type="text"
+          id="searchInput"
+          placeholder="Search buildings…"
+          autocomplete="off"/>
+        <button type="submit">Search</button>
+      </form>
+      <ul id="searchResults"></ul>
+    </div>
   </div>
 
   <div id="map"></div>
@@ -46,6 +93,22 @@
     const chkStreets = document.getElementById("chkStreets");
     const chkAdmins = document.getElementById("chkAdmins");
     const chkDynamic = document.getElementById("chkDynamic");
+
+    function onBuildingSearchSubmit(e) {
+      e.preventDefault();
+      const query = document.getElementById("searchInput").value.trim();
+      console.log("Search query:", query);
+    
+      fetch("/search_buildings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: query })
+      })
+      .then(r => r.json())
+      .then(results => {
+        console.log("Search results:", results);
+      })
+    }
 
     function dynamicVisibilityChecked() {
       const checked = chkDynamic.checked;
