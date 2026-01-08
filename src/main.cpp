@@ -121,9 +121,58 @@ class SuffixTree {
             }
         }
 
+        std::unordered_set<size_t> search_buildings(std::string_view query) const {
+            size_t node_idx = 0;
+            size_t q_pos = 0;
+
+            while (q_pos < query.size()) {
+                char c = query[q_pos];
+                const auto& edges = _nodes[node_idx].edges;
+                auto it = edges.find(c);
+                if (it == edges.end()) {
+                    return {};
+                }
+
+                const SuffixTreeEdge& edge = it->second;
+                std::string_view edge_str = _string_store.get(edge.suffix.string_id);
+                size_t edge_len = edge.suffix.length;
+
+                for (size_t i = 0; i < edge_len && q_pos < query.size(); i++, q_pos++) {
+                    if (edge_str[edge.suffix.offset + i] != query[q_pos]) return {};
+                }
+
+                if (q_pos == query.size()) {
+                    return collect_buildings(edge.child);
+                }
+
+                node_idx = edge.child;
+            }
+
+            return collect_buildings(node_idx);
+        }
+
     private:
         MappedStringStore& _string_store;
         std::vector<SuffixTreeNode> _nodes;
+
+        std::unordered_set<size_t> collect_buildings(size_t node_idx) const {
+            std::unordered_set<size_t> result;
+            std::vector<size_t> stack = { node_idx };
+
+            while (!stack.empty()) {
+                size_t idx = stack.back();
+                stack.pop_back();
+
+                const auto& node = _nodes[idx];
+                result.insert(node.buildings.begin(), node.buildings.end());
+
+                for (const auto& [_, edge] : node.edges) {
+                    stack.push_back(edge.child);
+                }
+            }
+
+            return result;
+        }
 
         std::vector<SuffixIndirect> build_address_suffixes(const Building& building) {
             std::vector<SuffixIndirect> suffixes;
@@ -759,6 +808,40 @@ class KDSolution : public ISolution {
             return json.str();
         }
 
+        std::string search_buildings(std::string& query) const override {
+            std::ostringstream json;
+            json << "[";
+            for (size_t building_idx : _suffix_tree.search_buildings(query)) {
+                const Building& building = _buildings[building_idx];
+                json << "{";
+                json << "\"lat\":" << building.location.x << ",";
+                json << "\"lon\":" << building.location.y << ",";
+
+                json << "\"address\":\"" << _string_store.get(building.address);
+
+                if (building.shop_name) {
+                    json << _string_store.get(*building.shop_name) << ", ";
+                }
+                if (building.street_idx) {
+                    json << _string_store.get(*building.street_idx);
+                }
+                json << "\",";
+
+                if (building.house_number) {
+                    json << "\"house_number\":\"" << *building.house_number << "\",";
+                } else {
+                    json << "\"house_number\":null";
+                }
+                // TODO: json << ",";
+                // TODO: json << "\"distance\":" << building.location.haversine_distance(target);
+
+                json << "}";
+            }
+            json << "]";
+
+            return json.str();
+        }
+
         void preprocess() override {
             std::vector<std::pair<Point, size_t>> pts;
 
@@ -1174,12 +1257,11 @@ int main(int argc, char* argv[]) {
         std::cout << "QUERY: " << q << std::endl;
 
         res.status = 200;
-        res.set_content("[]", "application/json");
         
-        // res.set_content(
-        //     solution.search_buildings(query),
-        //     "application/json"
-        // );
+        res.set_content(
+            solution.search_buildings(q),
+            "application/json"
+        );
     });
 
     std::cout << "Server started at http://localhost:" << configuration.port << std::endl;
