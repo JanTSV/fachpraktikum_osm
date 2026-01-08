@@ -176,30 +176,33 @@ class SuffixTree {
 
         std::vector<SuffixIndirect> build_address_suffixes(const Building& building) {
             std::vector<SuffixIndirect> suffixes;
+            const size_t min_suffix_len = 4;
+
+            auto add_suffixes = [&](size_t string_id) {
+                std::string_view s = _string_store.get(string_id);
+                if (s.size() < min_suffix_len) return;
+                for (size_t i = 0; i + min_suffix_len <= s.size(); ++i) {
+                    suffixes.push_back({string_id, i, s.size() - i});
+                }
+            };
             
             // Address
-            std::string_view s = _string_store.get(building.address);
-            suffixes.push_back({building.address, 0, s.size()});
+            add_suffixes(building.address);
 
             // Shop name
             if (building.shop_name) {
-                s = _string_store.get(*building.shop_name);
-                suffixes.push_back({*building.shop_name, 0, s.size()});
+                add_suffixes(*building.shop_name);
             }
 
             // Street
             if (building.street_idx) {
-                s = _string_store.get(*building.street_idx);
-                suffixes.push_back({*building.street_idx, 0, s.size()});
+                add_suffixes(*building.street_idx);
             }
 
             // House number
             if (building.house_number) {
                 const std::string house_number_string = std::to_string(*building.house_number);
-                size_t i = _string_store.get_or_add(house_number_string);
-                s = _string_store.get(i);
-                suffixes.push_back({i, 0, s.size()});
-
+                add_suffixes(_string_store.get_or_add(house_number_string));
             }
 
             return suffixes;
@@ -960,7 +963,7 @@ class KDSolution : public ISolution {
             start = std::chrono::high_resolution_clock::now();
 
             for (size_t i = 0; i < _buildings.size(); i++) {
-                // std::cout << "\t" << i << " / " << _buildings.size() << std::endl;
+                std::cout << "\t" << i << " / " << _buildings.size() << std::endl;
                 const Building& building = _buildings[i];
                 _suffix_tree.add_building(i, building);
             }
