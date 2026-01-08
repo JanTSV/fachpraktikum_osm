@@ -164,6 +164,12 @@ class SuffixTree {
                 const SuffixIndirect& current = address[start];
                 std::string_view str = _string_store.get(current.string_id);
 
+                if (offset >= current.length || current.offset + offset >= str.size()) {
+                    start++;
+                    offset = 0;
+                    continue;
+                }
+
                 char c = str[current.offset + offset];
                 auto it = _nodes[node_idx].edges.find(c);
                 if (it == _nodes[node_idx].edges.end()) {
@@ -181,16 +187,18 @@ class SuffixTree {
                 size_t match_len = 0;
                 std::string_view edge_str = _string_store.get(edge.suffix.string_id);
                 while (match_len < edge.suffix.length) {
-                    char edge_c = edge_str[edge.suffix.offset + match_len];
-                    char addr_c = str[current.offset + offset + match_len];
-                    if (edge_c != addr_c) break;
+                    if (edge.suffix.offset + match_len >= edge_str.size() ||
+                        current.offset + offset + match_len >= str.size()) {
+                        break;
+                    }
+
+                    if (edge_str[edge.suffix.offset + match_len] != str[current.offset + offset + match_len]) break;
                     
                     match_len++;
-                    if (offset + match_len >= current.length) break;
                 }
 
-                if (match_len < edge.suffix.length) {
-                    // Split edge
+                if (match_len != 0 && match_len < edge.suffix.length) {
+                    // Something matched, split edge
                     size_t old_child = edge.child;
                     SuffixIndirect remaining_edge{ edge.suffix.string_id, edge.suffix.offset + match_len, edge.suffix.length - match_len };
 
@@ -202,6 +210,16 @@ class SuffixTree {
                     // Update old node
                     edge.suffix.length = match_len;
                     edge.child = split_node;
+                }
+
+                if (match_len == 0) {
+                    // Nothing matched, create new node
+                    size_t new_node_idx = _nodes.size();
+                    _nodes.push_back(SuffixTreeNode{});
+                    SuffixIndirect new_suffix{ current.string_id, current.offset + offset, current.length - offset };
+                    _nodes[node_idx].edges[c] = { new_suffix, new_node_idx };
+                    _nodes[new_node_idx].buildings.insert(building_idx);
+                    return;
                 }
 
                 // Traverse suffixes and tree
@@ -859,6 +877,7 @@ class KDSolution : public ISolution {
             start = std::chrono::high_resolution_clock::now();
 
             for (size_t i = 0; i < _buildings.size(); i++) {
+                // std::cout << "\t" << i << " / " << _buildings.size() << std::endl;
                 const Building& building = _buildings[i];
                 _suffix_tree.add_building(i, building);
             }
