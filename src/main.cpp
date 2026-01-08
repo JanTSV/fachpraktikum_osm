@@ -10,6 +10,7 @@
 #include <optional>
 #include <ostream>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <fstream>
 #include <unordered_set>
@@ -116,7 +117,7 @@ class SuffixTree {
             std::vector<SuffixIndirect> suffixes = build_address_suffixes(building);
 
             for (size_t start = 0; start < suffixes.size(); start++) {
-                // TODO: insert_suffix(building_idx, suffixes, start, 0);
+                insert_suffix(building_idx, suffixes, start);
             }
         }
 
@@ -153,6 +154,67 @@ class SuffixTree {
             }
 
             return suffixes;
+        }
+
+        void insert_suffix(size_t building_idx, const std::vector<SuffixIndirect> address, size_t start) {
+            size_t node_idx = 0;
+            size_t offset = 0;
+
+            while (start < address.size()) {
+                const SuffixIndirect& current = address[start];
+                std::string_view str = _string_store.get(current.string_id);
+
+                char c = str[current.offset + offset];
+                auto it = _nodes[node_idx].edges.find(c);
+                if (it == _nodes[node_idx].edges.end()) {
+                    // No edge with 'c', create new one
+                    size_t new_node_idx = _nodes.size();
+                    _nodes.push_back(SuffixTreeNode{ });
+                    SuffixIndirect new_suffix{ current.string_id, current.offset + offset, current.length - offset };
+                    _nodes[node_idx].edges[c] = {new_suffix, new_node_idx};
+                    _nodes[new_node_idx].buildings.insert(building_idx);
+                    return;
+                }
+
+                // Try to find LCP
+                SuffixTreeEdge& edge = it->second;
+                size_t match_len = 0;
+                std::string_view edge_str = _string_store.get(edge.suffix.string_id);
+                while (match_len < edge.suffix.length) {
+                    char edge_c = edge_str[edge.suffix.offset + match_len];
+                    char addr_c = str[current.offset + offset + match_len];
+                    if (edge_c != addr_c) break;
+                    
+                    match_len++;
+                    if (offset + match_len >= current.length) break;
+                }
+
+                if (match_len < edge.suffix.length) {
+                    // Split edge
+                    size_t old_child = edge.child;
+                    SuffixIndirect remaining_edge{ edge.suffix.string_id, edge.suffix.offset + match_len, edge.suffix.length - match_len };
+
+                    // New node
+                    size_t split_node = _nodes.size();
+                    _nodes.push_back(SuffixTreeNode{ });
+                    _nodes[split_node].edges[_string_store.get(remaining_edge.string_id)[remaining_edge.offset]] = { remaining_edge, old_child };
+
+                    // Update old node
+                    edge.suffix.length = match_len;
+                    edge.child = split_node;
+                }
+
+                // Traverse suffixes and tree
+                offset += match_len;
+                if (offset >= current.length) {
+                    start++;
+                    offset = 0;
+                }
+                node_idx = edge.child;
+            }
+
+            // Add building to node
+            _nodes[node_idx].buildings.insert(building_idx);
         }
 
         friend class boost::serialization::access;
