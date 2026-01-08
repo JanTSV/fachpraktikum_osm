@@ -165,6 +165,19 @@ class SuffixArray {
             _entries.swap(sorted);
         }
 
+        void debug_print_suffix_array() {
+            std::cout << "Suffix Array Contents (" << _entries.size() << " entries):\n";
+            for (size_t i = 0; i < _entries.size(); ++i) {
+                const auto& e = _entries[i];
+                std::string_view s = _string_store.get(e.string_id);
+                s.remove_prefix(e.offset);
+                std::cout << "  [" << i << "] building_idx=" << e.building_idx
+                        << ", string_id=" << e.string_id
+                        << ", offset=" << e.offset
+                        << ", suffix=\"" << s << "\"\n";
+            }
+        }
+
         std::unordered_set<size_t> search_buildings(const std::string& query) const {
             std::unordered_set<size_t> result;
 
@@ -1443,6 +1456,8 @@ void test_multiple_buildings() {
     sa.add_building(0, Building{Point(0,0), a_id, std::nullopt, std::nullopt});
     sa.add_building(1, Building{Point(0,0), b_id, std::nullopt, std::nullopt});
     sa.build();
+
+    sa.debug_print_suffix_array();
 
     auto res_a = sa.search_buildings("apple");
     if (res_a.count(0) != 1 || res_a.count(1) != 0)

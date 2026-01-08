@@ -4,6 +4,7 @@
 # Executables
 osm_debug
 osm_release
+osm_test
 
 # Build directory
 /build/
