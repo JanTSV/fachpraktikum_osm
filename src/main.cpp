@@ -72,41 +72,32 @@ std::string get_duration(const Duration& duration) {
 
 struct SuffixArrayEntry {
     public:
-        size_t string_id;
-        uint16_t offset;
+        size_t pos;
         size_t building_idx;
 
     private:
         friend class boost::serialization::access;
         template<class Archive>
         void serialize(Archive& ar, const unsigned int /*version*/) {
-            ar & string_id;
-            ar & offset;
+            ar & pos;
             ar & building_idx;
         }
 };
 
 class SuffixArray {
     public:
-        explicit SuffixArray(MappedStringStore& store)
-            : _string_store(store) {}
+        SuffixArray() = default;
 
-        void add_building(size_t building_idx, const Building& building) {
-            auto add_all_suffixes = [&](size_t string_id) {
-                std::string_view s = _string_store.get(string_id);
-                for (uint16_t i = 0; i < s.size(); ++i) {
-                    _entries.push_back({ string_id, i, building_idx });
-                }
-            };
+        void add_building(size_t building_idx, const std::string& full_address) {
+            size_t start = _text.size();
 
-            add_all_suffixes(building.address);
-            if (building.shop_name) add_all_suffixes(*building.shop_name);
-            if (building.street_idx) add_all_suffixes(*building.street_idx);
+            // Append address
+            _text += full_address;
+            _text.push_back('\0'); // sentinel separator
 
-            if (building.house_number) {
-                std::string hn = std::to_string(*building.house_number);
-                size_t hn_id = _string_store.get_or_add(hn);
-                add_all_suffixes(hn_id);
+            // Record suffix starts for this building
+            for (size_t i = start; i < _text.size(); ++i) {
+                _entries.push_back({ i, building_idx });
             }
         }
 
@@ -115,48 +106,37 @@ class SuffixArray {
             if (n == 0) return;
 
             std::vector<size_t> sa(n);
-            std::vector<int> rank(n), rank2(n), new_rank(n);
+            std::vector<int> rank(n), tmp(n);
 
-            for (size_t i = 0; i < n; ++i)
+            for (size_t i = 0; i < n; ++i) {
                 sa[i] = i;
+                rank[i] = _text[_entries[i].pos];
+            }
 
-            // Initial rank = first character
-            for (size_t i = 0; i < n; ++i)
-                rank[i] = char_at(_entries[i], 0);
-
-            // Prefix doubling
-            for (size_t k = 1; k < 2048; k <<= 1) {
-                // Precompute second rank
-                for (size_t i = 0; i < n; ++i)
-                    rank2[i] = char_at(_entries[i], k);
-
+            for (size_t k = 1; k < _text.size(); k <<= 1) {
                 auto cmp = [&](size_t a, size_t b) {
                     if (rank[a] != rank[b])
                         return rank[a] < rank[b];
-                    return rank2[a] < rank2[b];
+
+                    int ra = (a + k < n) ? rank[a + k] : -1;
+                    int rb = (b + k < n) ? rank[b + k] : -1;
+                    return ra < rb;
                 };
 
-                // std::sort(std::execution::par_unseq, sa.begin(), sa.end(), cmp);
                 std::sort(sa.begin(), sa.end(), cmp);
 
-                new_rank[sa[0]] = 0;
-                bool changed = false;
-
+                tmp[sa[0]] = 0;
                 for (size_t i = 1; i < n; ++i) {
-                    bool diff =
-                        rank[sa[i - 1]] != rank[sa[i]] ||
-                        rank2[sa[i - 1]] != rank2[sa[i]];
-
-                    new_rank[sa[i]] = new_rank[sa[i - 1]] + diff;
-                    changed |= diff;
+                    tmp[sa[i]] = tmp[sa[i - 1]] +
+                        (cmp(sa[i - 1], sa[i]) ? 1 : 0);
                 }
 
-                rank.swap(new_rank);
-                if (!changed)
+                rank = tmp;
+                if (rank[sa[n - 1]] == int(n - 1))
                     break;
             }
 
-            // Reorder entries into final suffix array
+            // Reorder entries according to suffix array
             std::vector<SuffixArrayEntry> sorted;
             sorted.reserve(n);
             for (size_t i = 0; i < n; ++i)
@@ -165,50 +145,27 @@ class SuffixArray {
             _entries.swap(sorted);
         }
 
-        void debug_print_suffix_array() {
-            std::cout << "Suffix Array Contents (" << _entries.size() << " entries):\n";
-            for (size_t i = 0; i < _entries.size(); ++i) {
-                const auto& e = _entries[i];
-                std::string_view s = _string_store.get(e.string_id);
-                s.remove_prefix(e.offset);
-                std::cout << "  [" << i << "] building_idx=" << e.building_idx
-                        << ", string_id=" << e.string_id
-                        << ", offset=" << e.offset
-                        << ", suffix=\"" << s << "\"\n";
-            }
-        }
-
         std::unordered_set<size_t> search_buildings(const std::string& query) const {
             std::unordered_set<size_t> result;
+            if (_entries.empty()) return result;
 
             size_t left = 0;
             size_t right = _entries.size();
 
-            // Binary search for the first suffix that could match `query`
+            // lower_bound
             while (left < right) {
-                size_t mid = left + (right - left) / 2;
-                std::string_view sv = _string_store.get(_entries[mid].string_id);
-                sv.remove_prefix(_entries[mid].offset);
-
-                // Compare safely
-                size_t len = std::min(sv.size(), query.size());
-                int cmp = sv.compare(0, len, query, 0, len);
-
-                if (cmp < 0 || (cmp == 0 && sv.size() < query.size())) {
-                    left = mid + 1;  // Suffix too small → go right
-                } else {
-                    right = mid;     // Could be a match → go left
-                }
+                size_t mid = (left + right) / 2;
+                int cmp = compare_suffix(_entries[mid].pos, query);
+                if (cmp < 0)
+                    left = mid + 1;
+                else
+                    right = mid;
             }
 
-            // Forward scan to collect all matching suffixes
+            // collect matches
             for (size_t i = left; i < _entries.size(); ++i) {
-                std::string_view sv = _string_store.get(_entries[i].string_id);
-                sv.remove_prefix(_entries[i].offset);
-
-                if (sv.size() < query.size()) break;          // Suffix too short → stop
-                if (sv.substr(0, query.size()) != query) break; // Mismatch → stop
-
+                if (compare_suffix(_entries[i].pos, query) != 0)
+                    break;
                 result.insert(_entries[i].building_idx);
             }
 
@@ -216,24 +173,27 @@ class SuffixArray {
         }
 
     private:
-        MappedStringStore& _string_store;
+        std::string _text;
         std::vector<SuffixArrayEntry> _entries;
 
-        inline int char_at(const SuffixArrayEntry& e, size_t k) const {
-            const std::string_view s = _string_store.get(e.string_id);
-            size_t pos = e.offset + k;
-            return (pos < s.size())
-                ? static_cast<unsigned char>(s[pos])
-                : -1;
+        int compare_suffix(size_t pos, const std::string& q) const {
+            size_t i = 0;
+            while (i < q.size()) {
+                char c = _text[pos + i];
+                if (c == '\0') return -1;
+                if (c != q[i]) return c < q[i] ? -1 : 1;
+                ++i;
+            }
+            return 0;
         }
 
         friend class boost::serialization::access;
         template<class Archive>
         void serialize(Archive& ar, const unsigned int /*version*/) {
+            ar & _text;
             ar & _entries;
         }
 };
-
 
 struct SuffixIndirect {
     size_t string_id;  // String store index
@@ -657,7 +617,6 @@ class KDTree {
 class KDSolution : public ISolution {
     public:
         // TODO: KDSolution() : _suffix_tree(_string_store) { }
-        KDSolution() : _suffix_array(_string_store) { }
 
         void add_building(double lat, double lon, const char* street, std::optional<HouseNumber> house_number, const char* shop_name) override {
             // Add meta info to _buildings
@@ -946,8 +905,13 @@ class KDSolution : public ISolution {
         std::string search_buildings(std::string& query) const override {
             std::ostringstream json;
             json << "[";
-            // TODO: for (size_t building_idx : _suffix_tree.search_buildings(query)) {
+
+            bool first = true;
+
             for (size_t building_idx : _suffix_array.search_buildings(query)) {
+                if (!first) json << ",";
+                first = false;
+
                 const Building& building = _buildings[building_idx];
                 json << "{";
                 json << "\"lat\":" << building.location.x << ",";
@@ -964,19 +928,18 @@ class KDSolution : public ISolution {
                 json << "\",";
 
                 if (building.house_number) {
-                    json << "\"house_number\":\"" << *building.house_number << "\",";
+                    json << "\"house_number\":\"" << *building.house_number << "\"";
                 } else {
                     json << "\"house_number\":null";
                 }
-                // TODO: json << ",";
-                // TODO: json << "\"distance\":" << building.location.haversine_distance(target);
 
                 json << "}";
             }
-            json << "]";
 
+            json << "]";
             return json.str();
         }
+
 
         void preprocess() override {
             std::vector<std::pair<Point, size_t>> pts;
@@ -1107,8 +1070,20 @@ class KDSolution : public ISolution {
             start = std::chrono::high_resolution_clock::now();
 
             for (size_t i = 0; i < _buildings.size(); ++i) {
+                const Building& building = _buildings[i];
                 std::cout << "\t" << i << " / " << _buildings.size() << std::endl;
-                _suffix_array.add_building(i, _buildings[i]);
+
+                std::ostringstream addr;
+                addr << _string_store.get(building.address);
+
+                if (building.shop_name)
+                    addr << _string_store.get(*building.shop_name);
+                if (building.street_idx)
+                    addr << _string_store.get(*building.street_idx);
+                if (building.house_number)
+                    addr << *building.house_number;
+
+                _suffix_array.add_building(i, addr.str());
             }
 
             _suffix_array.build();
@@ -1426,49 +1401,44 @@ int main(int argc, char* argv[]) {
 #ifdef TEST
 void test_basic_suffixes() {
     std::cout << "[test_basic_suffixes] ";
-    MappedStringStore store;
-    SuffixArray sa(store);
 
-    size_t id = store.get_or_add("abc");
-    sa.add_building(0, Building{Point(0,0), id, std::nullopt, std::nullopt}); 
+    SuffixArray sa;
+    sa.add_building(0, "abc");
     sa.build();
 
     auto result = sa.search_buildings("a");
-    if (result.count(0) != 1) throw std::runtime_error("Failed search 'a'");
+    if (result.count(0) != 1)
+        throw std::runtime_error("Failed search 'a'");
 
     result = sa.search_buildings("bc");
-    if (result.count(0) != 1) throw std::runtime_error("Failed search 'bc'");
+    if (result.count(0) != 1)
+        throw std::runtime_error("Failed search 'bc'");
 
     result = sa.search_buildings("d");
-    if (!result.empty()) throw std::runtime_error("Failed search 'd'");
+    if (!result.empty())
+        throw std::runtime_error("Failed search 'd'");
 
     std::cout << "PASSED\n";
 }
 
 void test_multiple_buildings() {
     std::cout << "[test_multiple_buildings] ";
-    MappedStringStore store;
-    SuffixArray sa(store);
 
-    size_t a_id = store.get_or_add("apple street");
-    size_t b_id = store.get_or_add("banana ave");
-
-    sa.add_building(0, Building{Point(0,0), a_id, std::nullopt, std::nullopt});
-    sa.add_building(1, Building{Point(0,0), b_id, std::nullopt, std::nullopt});
+    SuffixArray sa;
+    sa.add_building(0, "apple street");
+    sa.add_building(1, "banana ave");
     sa.build();
 
-    sa.debug_print_suffix_array();
-
     auto res_a = sa.search_buildings("apple");
-    if (res_a.count(0) != 1 || res_a.count(1) != 0)
+    if (res_a.size() != 1 || res_a.count(0) != 1)
         throw std::runtime_error("Failed search 'apple'");
 
     auto res_b = sa.search_buildings("banana");
-    if (res_b.count(1) != 1 || res_b.count(0) != 0)
+    if (res_b.size() != 1 || res_b.count(1) != 1)
         throw std::runtime_error("Failed search 'banana'");
 
-    auto res_none = sa.search_buildings("street");
-    if (res_none.size() != 1 || res_none.count(0) != 1)
+    auto res_street = sa.search_buildings("street");
+    if (res_street.size() != 1 || res_street.count(0) != 1)
         throw std::runtime_error("Failed search 'street'");
 
     std::cout << "PASSED\n";
@@ -1476,14 +1446,10 @@ void test_multiple_buildings() {
 
 void test_partial_overlaps() {
     std::cout << "[test_partial_overlaps] ";
-    MappedStringStore store;
-    SuffixArray sa(store);
 
-    size_t id1 = store.get_or_add("123 main");
-    size_t id2 = store.get_or_add("123 maple");
-
-    sa.add_building(0, Building{Point(0,0), id1, std::nullopt, std::nullopt});
-    sa.add_building(1, Building{Point(0,0), id2, std::nullopt, std::nullopt});
+    SuffixArray sa;
+    sa.add_building(0, "123 main");
+    sa.add_building(1, "123 maple");
     sa.build();
 
     auto res = sa.search_buildings("123");
@@ -1501,10 +1467,26 @@ void test_partial_overlaps() {
     std::cout << "PASSED\n";
 }
 
+void test_no_cross_building_match() {
+    std::cout << "[test_no_cross_building_match] ";
+
+    SuffixArray sa;
+    sa.add_building(0, "abc");
+    sa.add_building(1, "def");
+    sa.build();
+
+    auto res = sa.search_buildings("cde");
+    if (!res.empty())
+        throw std::runtime_error("Matched across building boundary");
+
+    std::cout << "PASSED\n";
+}
+
 void test() {
     test_basic_suffixes();
     test_multiple_buildings();
     test_partial_overlaps();
+    test_no_cross_building_match();
 }
 
 #endif
