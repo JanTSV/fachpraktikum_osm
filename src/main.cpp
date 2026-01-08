@@ -15,6 +15,7 @@
 #include <fstream>
 #include <unordered_set>
 #include <unordered_map>
+#include <execution>
 
 #include <osmium/io/any_input.hpp>
 #include <osmium/osm/area.hpp>
@@ -45,6 +46,10 @@ static const int DEFAULT_PORT = 8080;
 using index_type = osmium::index::map::FlexMem<osmium::unsigned_object_id_type, osmium::Location>;
 using location_handler_type = osmium::handler::NodeLocationsForWays<index_type>;
 
+#ifdef TEST
+void test();
+#endif
+
 template<typename Duration>
 std::string get_duration(const Duration& duration) {
     auto us = std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
@@ -68,12 +73,8 @@ std::string get_duration(const Duration& duration) {
 struct SuffixArrayEntry {
     public:
         size_t string_id;
-        size_t offset;
+        uint16_t offset;
         size_t building_idx;
-
-        bool operator<(const SuffixArrayEntry& other) const {
-            return std::tie(string_id, offset) < std::tie(other.string_id, other.offset);
-        }
 
     private:
         friend class boost::serialization::access;
@@ -87,12 +88,13 @@ struct SuffixArrayEntry {
 
 class SuffixArray {
     public:
-        SuffixArray(MappedStringStore& store) : _string_store(store) {}
+        explicit SuffixArray(MappedStringStore& store)
+            : _string_store(store) {}
 
         void add_building(size_t building_idx, const Building& building) {
             auto add_all_suffixes = [&](size_t string_id) {
                 std::string_view s = _string_store.get(string_id);
-                for (size_t i = 0; i < s.size(); i++) {
+                for (uint16_t i = 0; i < s.size(); ++i) {
                     _entries.push_back({ string_id, i, building_idx });
                 }
             };
@@ -100,40 +102,90 @@ class SuffixArray {
             add_all_suffixes(building.address);
             if (building.shop_name) add_all_suffixes(*building.shop_name);
             if (building.street_idx) add_all_suffixes(*building.street_idx);
+
             if (building.house_number) {
-                const std::string house_str = std::to_string(*building.house_number);
-                size_t house_str_idx = _string_store.get_or_add(house_str);
-                add_all_suffixes(house_str_idx);
+                std::string hn = std::to_string(*building.house_number);
+                size_t hn_id = _string_store.get_or_add(hn);
+                add_all_suffixes(hn_id);
             }
         }
 
         void build() {
-            std::sort(_entries.begin(), _entries.end(),
-                [this](const SuffixArrayEntry& a, const SuffixArrayEntry& b) {
-                    std::string_view sa = _string_store.get(a.string_id).substr(a.offset);
-                    std::string_view sb = _string_store.get(b.string_id).substr(b.offset);
-                    return sa < sb;
-                });
+            const size_t n = _entries.size();
+            if (n == 0) return;
+
+            std::vector<size_t> sa(n);
+            std::vector<int> rank(n), rank2(n), new_rank(n);
+
+            for (size_t i = 0; i < n; ++i)
+                sa[i] = i;
+
+            // Initial rank = first character
+            for (size_t i = 0; i < n; ++i)
+                rank[i] = char_at(_entries[i], 0);
+
+            // Prefix doubling
+            for (size_t k = 1; k < 2048; k <<= 1) {
+                // Precompute second rank
+                for (size_t i = 0; i < n; ++i)
+                    rank2[i] = char_at(_entries[i], k);
+
+                auto cmp = [&](size_t a, size_t b) {
+                    if (rank[a] != rank[b])
+                        return rank[a] < rank[b];
+                    return rank2[a] < rank2[b];
+                };
+
+                // std::sort(std::execution::par_unseq, sa.begin(), sa.end(), cmp);
+                std::sort(sa.begin(), sa.end(), cmp);
+
+                new_rank[sa[0]] = 0;
+                bool changed = false;
+
+                for (size_t i = 1; i < n; ++i) {
+                    bool diff =
+                        rank[sa[i - 1]] != rank[sa[i]] ||
+                        rank2[sa[i - 1]] != rank2[sa[i]];
+
+                    new_rank[sa[i]] = new_rank[sa[i - 1]] + diff;
+                    changed |= diff;
+                }
+
+                rank.swap(new_rank);
+                if (!changed)
+                    break;
+            }
+
+            // Reorder entries into final suffix array
+            std::vector<SuffixArrayEntry> sorted;
+            sorted.reserve(n);
+            for (size_t i = 0; i < n; ++i)
+                sorted.push_back(_entries[sa[i]]);
+
+            _entries.swap(sorted);
         }
 
         std::unordered_set<size_t> search_buildings(const std::string& query) const {
             std::unordered_set<size_t> result;
 
-            auto lower = std::lower_bound(_entries.begin(), _entries.end(), query,
-                [this](const SuffixArrayEntry& s, const std::string& q) {
-                    std::string_view sv = _string_store.get(s.string_id).substr(s.offset);
+            auto lower = std::lower_bound(
+                _entries.begin(), _entries.end(), query,
+                [this](const SuffixArrayEntry& e, const std::string& q) {
+                    std::string_view sv =
+                        _string_store.get(e.string_id).substr(e.offset);
                     return sv.compare(0, q.size(), q) < 0;
                 });
 
-            auto upper = std::upper_bound(_entries.begin(), _entries.end(), query,
-                [this](const std::string& q, const SuffixArrayEntry& s) {
-                    std::string_view sv = _string_store.get(s.string_id).substr(s.offset);
+            auto upper = std::upper_bound(
+                _entries.begin(), _entries.end(), query,
+                [this](const std::string& q, const SuffixArrayEntry& e) {
+                    std::string_view sv =
+                        _string_store.get(e.string_id).substr(e.offset);
                     return q.compare(0, q.size(), sv.substr(0, q.size())) < 0;
                 });
 
-            for (auto it = lower; it != upper; ++it) {
+            for (auto it = lower; it != upper; ++it)
                 result.insert(it->building_idx);
-            }
 
             return result;
         }
@@ -142,12 +194,21 @@ class SuffixArray {
         MappedStringStore& _string_store;
         std::vector<SuffixArrayEntry> _entries;
 
+        inline int char_at(const SuffixArrayEntry& e, size_t k) const {
+            const std::string_view s = _string_store.get(e.string_id);
+            size_t pos = e.offset + k;
+            return (pos < s.size())
+                ? static_cast<unsigned char>(s[pos])
+                : -1;
+        }
+
         friend class boost::serialization::access;
         template<class Archive>
         void serialize(Archive& ar, const unsigned int /*version*/) {
             ar & _entries;
         }
 };
+
 
 struct SuffixIndirect {
     size_t string_id;  // String store index
@@ -1107,6 +1168,9 @@ struct Configuration {
 };
 
 int main(int argc, char* argv[]) {
+#ifdef TEST
+    test();
+#else
     Configuration configuration;
 
     // Command line parsing
@@ -1329,6 +1393,91 @@ int main(int argc, char* argv[]) {
 
     std::cout << "Server started at http://localhost:" << configuration.port << std::endl;
     svr.listen("localhost", configuration.port);
+#endif
 
     return 0;
 }
+
+#ifdef TEST
+void test_basic_suffixes() {
+    std::cout << "[test_basic_suffixes] ";
+    MappedStringStore store;
+    SuffixArray sa(store);
+
+    size_t id = store.get_or_add("abc");
+    sa.add_building(0, Building{Point(0,0), id, std::nullopt, std::nullopt}); 
+    sa.build();
+
+    auto result = sa.search_buildings("a");
+    if (result.count(0) != 1) throw std::runtime_error("Failed search 'a'");
+
+    result = sa.search_buildings("bc");
+    if (result.count(0) != 1) throw std::runtime_error("Failed search 'bc'");
+
+    result = sa.search_buildings("d");
+    if (!result.empty()) throw std::runtime_error("Failed search 'd'");
+
+    std::cout << "PASSED\n";
+}
+
+void test_multiple_buildings() {
+    std::cout << "[test_multiple_buildings] ";
+    MappedStringStore store;
+    SuffixArray sa(store);
+
+    size_t a_id = store.get_or_add("apple street");
+    size_t b_id = store.get_or_add("banana ave");
+
+    sa.add_building(0, Building{Point(0,0), a_id, std::nullopt, std::nullopt});
+    sa.add_building(1, Building{Point(0,0), b_id, std::nullopt, std::nullopt});
+    sa.build();
+
+    auto res_a = sa.search_buildings("apple");
+    if (res_a.count(0) != 1 || res_a.count(1) != 0)
+        throw std::runtime_error("Failed search 'apple'");
+
+    auto res_b = sa.search_buildings("banana");
+    if (res_b.count(1) != 1 || res_b.count(0) != 0)
+        throw std::runtime_error("Failed search 'banana'");
+
+    auto res_none = sa.search_buildings("street");
+    if (res_none.size() != 1 || res_none.count(0) != 1)
+        throw std::runtime_error("Failed search 'street'");
+
+    std::cout << "PASSED\n";
+}
+
+void test_partial_overlaps() {
+    std::cout << "[test_partial_overlaps] ";
+    MappedStringStore store;
+    SuffixArray sa(store);
+
+    size_t id1 = store.get_or_add("123 main");
+    size_t id2 = store.get_or_add("123 maple");
+
+    sa.add_building(0, Building{Point(0,0), id1, std::nullopt, std::nullopt});
+    sa.add_building(1, Building{Point(0,0), id2, std::nullopt, std::nullopt});
+    sa.build();
+
+    auto res = sa.search_buildings("123");
+    if (res.size() != 2)
+        throw std::runtime_error("Failed search '123'");
+
+    res = sa.search_buildings("main");
+    if (res.size() != 1 || res.count(0) != 1)
+        throw std::runtime_error("Failed search 'main'");
+
+    res = sa.search_buildings("maple");
+    if (res.size() != 1 || res.count(1) != 1)
+        throw std::runtime_error("Failed search 'maple'");
+
+    std::cout << "PASSED\n";
+}
+
+void test() {
+    test_basic_suffixes();
+    test_multiple_buildings();
+    test_partial_overlaps();
+}
+
+#endif
