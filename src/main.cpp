@@ -168,24 +168,36 @@ class SuffixArray {
         std::unordered_set<size_t> search_buildings(const std::string& query) const {
             std::unordered_set<size_t> result;
 
-            auto lower = std::lower_bound(
-                _entries.begin(), _entries.end(), query,
-                [this](const SuffixArrayEntry& e, const std::string& q) {
-                    std::string_view sv =
-                        _string_store.get(e.string_id).substr(e.offset);
-                    return sv.compare(0, q.size(), q) < 0;
-                });
+            size_t left = 0;
+            size_t right = _entries.size();
 
-            auto upper = std::upper_bound(
-                _entries.begin(), _entries.end(), query,
-                [this](const std::string& q, const SuffixArrayEntry& e) {
-                    std::string_view sv =
-                        _string_store.get(e.string_id).substr(e.offset);
-                    return q.compare(0, q.size(), sv.substr(0, q.size())) < 0;
-                });
+            // Binary search for the first suffix that could match `query`
+            while (left < right) {
+                size_t mid = left + (right - left) / 2;
+                std::string_view sv = _string_store.get(_entries[mid].string_id);
+                sv.remove_prefix(_entries[mid].offset);
 
-            for (auto it = lower; it != upper; ++it)
-                result.insert(it->building_idx);
+                // Compare safely
+                size_t len = std::min(sv.size(), query.size());
+                int cmp = sv.compare(0, len, query, 0, len);
+
+                if (cmp < 0 || (cmp == 0 && sv.size() < query.size())) {
+                    left = mid + 1;  // Suffix too small → go right
+                } else {
+                    right = mid;     // Could be a match → go left
+                }
+            }
+
+            // Forward scan to collect all matching suffixes
+            for (size_t i = left; i < _entries.size(); ++i) {
+                std::string_view sv = _string_store.get(_entries[i].string_id);
+                sv.remove_prefix(_entries[i].offset);
+
+                if (sv.size() < query.size()) break;          // Suffix too short → stop
+                if (sv.substr(0, query.size()) != query) break; // Mismatch → stop
+
+                result.insert(_entries[i].building_idx);
+            }
 
             return result;
         }
