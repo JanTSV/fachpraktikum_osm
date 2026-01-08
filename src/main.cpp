@@ -176,33 +176,34 @@ class SuffixTree {
 
         std::vector<SuffixIndirect> build_address_suffixes(const Building& building) {
             std::vector<SuffixIndirect> suffixes;
-            const size_t min_suffix_len = 4;
 
-            auto add_suffixes = [&](size_t string_id) {
+            auto add_all_suffixes = [&](size_t string_id) {
                 std::string_view s = _string_store.get(string_id);
-                if (s.size() < min_suffix_len) return;
-                for (size_t i = 0; i + min_suffix_len <= s.size(); ++i) {
+                // TODO: std::string normalized = normalize_string(s);
+                // size_t norm_id = _string_store.get_or_add(normalized);
+
+                for (size_t i = 0; i < s.size(); i++) {
                     suffixes.push_back({string_id, i, s.size() - i});
                 }
             };
             
             // Address
-            add_suffixes(building.address);
+            add_all_suffixes(building.address);
 
             // Shop name
             if (building.shop_name) {
-                add_suffixes(*building.shop_name);
+                add_all_suffixes(*building.shop_name);
             }
 
             // Street
             if (building.street_idx) {
-                add_suffixes(*building.street_idx);
+                add_all_suffixes(*building.street_idx);
             }
 
             // House number
             if (building.house_number) {
                 const std::string house_number_string = std::to_string(*building.house_number);
-                add_suffixes(_string_store.get_or_add(house_number_string));
+                add_all_suffixes(_string_store.get_or_add(house_number_string));
             }
 
             return suffixes;
