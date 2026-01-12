@@ -984,6 +984,53 @@ class KDSolution : public ISolution {
             return json.str();
         }
 
+        std::string search_buildings_inverted_index(std::string& query) const override {
+            std::ostringstream json;
+            json << "{";
+
+            bool first = true;
+
+            auto start = std::chrono::high_resolution_clock::now();
+            auto buildings = _inverted_index.search_buildings(query);
+            auto end = std::chrono::high_resolution_clock::now();
+            auto query_duration = end - start;
+            std::cout << "search_buildings() ran in " << get_duration(query_duration) << std::endl;
+            json << "\"time\":" << std::chrono::duration_cast<std::chrono::microseconds>(query_duration).count() << ",";
+
+            json << "\"results\": [";
+            for (size_t building_idx : buildings) {
+                if (!first) json << ",";
+                first = false;
+
+                const Building& building = _buildings[building_idx];
+                json << "{";
+                json << "\"lat\":" << building.location.x << ",";
+                json << "\"lon\":" << building.location.y << ",";
+
+                json << "\"address\":\"" << _string_store.get(building.address);
+
+                if (building.shop_name) {
+                    json << _string_store.get(*building.shop_name) << ", ";
+                }
+                if (building.street_idx) {
+                    json << _string_store.get(*building.street_idx);
+                }
+                json << "\",";
+
+                if (building.house_number) {
+                    json << "\"house_number\":\"" << *building.house_number << "\"";
+                } else {
+                    json << "\"house_number\":null";
+                }
+
+                json << "}";
+            }
+            json << "]";
+
+            json << "}";
+            return json.str();
+        }
+
 
         void preprocess() override {
             std::vector<std::pair<Point, size_t>> pts;
@@ -1036,6 +1083,8 @@ class KDSolution : public ISolution {
                         const AdminArea& area = _hierarchical_admin_areas[level][a];
                         if (area.point_in_polygon(p)) {
                             address.push_back(area.name_idx);
+
+                            // TODO: add part address to InvertedIndex
                             break;
                         }
                     }
@@ -1098,30 +1147,45 @@ class KDSolution : public ISolution {
             end = std::chrono::high_resolution_clock::now();
             std::cout << "\tStreet names assigned " << get_duration(end - start) << std::endl;
 
-            // Build suffix array
-            std::cout << "\tBuilding suffix array..." << std::endl;
+            // TODO: Build InvertedIndex
+            std::cout << "\tBuilding inverted index..." << std::endl;
             start = std::chrono::high_resolution_clock::now();
-
             for (size_t i = 0; i < _buildings.size(); ++i) {
                 const Building& building = _buildings[i];
-                std::cout << "\t" << i << " / " << _buildings.size() << std::endl;
 
-                std::ostringstream addr;
-                addr << _string_store.get(building.address);
-
-                if (building.shop_name)
-                    addr << _string_store.get(*building.shop_name);
-                if (building.street_idx)
-                    addr << _string_store.get(*building.street_idx);
-                if (building.house_number)
-                    addr << *building.house_number;
-
-                _suffix_array.add_building(i, addr.str());
+                _inverted_index.add_building(i, _string_store.get(building.address));
+                if (building.shop_name) _inverted_index.add_building(i, _string_store.get(*building.shop_name));
+                if (building.street_idx) _inverted_index.add_building(i, _string_store.get(*building.street_idx));
+                if (building.house_number) _inverted_index.add_building(i, std::to_string(*building.house_number));
             }
 
-            _suffix_array.build();
             end = std::chrono::high_resolution_clock::now();
-            std::cout << "\tSuffix array built " << get_duration(end - start) << std::endl;
+            std::cout << "\tInverted index built " << get_duration(end - start) << std::endl;
+
+            // TODO: Build suffix array from inverted index
+            // std::cout << "\tBuilding suffix array..." << std::endl;
+            // start = std::chrono::high_resolution_clock::now();
+
+            // for (size_t i = 0; i < _buildings.size(); ++i) {
+            //     const Building& building = _buildings[i];
+            //     // std::cout << "\t" << i << " / " << _buildings.size() << std::endl;
+
+            //     std::ostringstream addr;
+            //     addr << _string_store.get(building.address);
+
+            //     if (building.shop_name)
+            //         addr << _string_store.get(*building.shop_name);
+            //     if (building.street_idx)
+            //         addr << _string_store.get(*building.street_idx);
+            //     if (building.house_number)
+            //         addr << *building.house_number;
+
+            //     _suffix_array.add_building(i, addr.str());
+            // }
+
+            // _suffix_array.build();
+            // end = std::chrono::high_resolution_clock::now();
+            // std::cout << "\tSuffix array built " << get_duration(end - start) << std::endl;
         }
 
         void serialize(const std::string& path) const override {
@@ -1175,6 +1239,7 @@ class KDSolution : public ISolution {
         }
 
         SuffixArray _suffix_array;
+        InvertedIndex _inverted_index;
 
         friend class boost::serialization::access;
         template<class Archive>
@@ -1187,6 +1252,7 @@ class KDSolution : public ISolution {
             ar & _hierarchical_admin_areas_trees;
             ar & _hierarchical_admin_areas;
             ar & _suffix_array;
+            ar & _inverted_index;
         }
 };
 
@@ -1401,7 +1467,7 @@ int main(int argc, char* argv[]) {
         res.set_content(solution.get_nearest_admin_area(lat, lon, filter, expected_level), "application/json");
     });
 
-    // API endpoint for geocoder
+    // API endpoints for geocoder
     svr.Post("/search_buildings", [&solution](const httplib::Request& req, httplib::Response& res) {
         char query[1024];
 
@@ -1418,6 +1484,26 @@ int main(int argc, char* argv[]) {
         
         res.set_content(
             solution.search_buildings(q),
+            "application/json"
+        );
+    });
+
+    svr.Post("/search_buildings_inverted_index", [&solution](const httplib::Request& req, httplib::Response& res) {
+        char query[1024];
+
+        bool ok = (sscanf(req.body.c_str(), R"({"query":"%1023[^"]"})", query) == 1);
+        if (!ok) {
+            res.status = 400;
+            res.set_content("Invalid JSON", "text/plain");
+            return;
+        }
+
+        std::string q(query);
+        
+        res.status = 200;
+        
+        res.set_content(
+            solution.search_buildings_inverted_index(q),
             "application/json"
         );
     });

@@ -70,6 +70,7 @@
           placeholder="Search buildings…"
           autocomplete="off"/>
         <button type="submit">Search</button>
+        <label><input type="checkbox" id="chkInverted" checked>Use Inverted Index</label>
         <div id="queryTime" style="margin-top:4px; font-size:12px; color:#555;"></div>
       </form>
       <ul id="searchResults"></ul>
@@ -94,6 +95,7 @@
     const chkStreets = document.getElementById("chkStreets");
     const chkAdmins = document.getElementById("chkAdmins");
     const chkDynamic = document.getElementById("chkDynamic");
+    const chkInverted = document.getElementById("chkInverted");
 
     // Query form
     const resultsList = document.getElementById("searchResults");
@@ -108,7 +110,8 @@
       
       if (!query) return;
 
-      fetch("/search_buildings", {
+      let api = chkInverted.checked ? "/search_buildings_inverted_index" : "/search_buildings";
+      fetch(api, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query: query })
