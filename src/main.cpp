@@ -720,7 +720,7 @@ class KDSolution : public ISolution {
 
         std::string search_buildings(std::string& query) const override {
             std::ostringstream json;
-            json << "[";
+            json << "{";
 
             bool first = true;
 
@@ -729,7 +729,9 @@ class KDSolution : public ISolution {
             auto end = std::chrono::high_resolution_clock::now();
             auto query_duration = end - start;
             std::cout << "search_buildings() ran in " << get_duration(query_duration) << std::endl;
+            json << "\"time\":" << std::chrono::duration_cast<std::chrono::microseconds>(query_duration).count() << ",";
 
+            json << "\"results\": [";
             for (size_t building_idx : buildings) {
                 if (!first) json << ",";
                 first = false;
@@ -757,8 +759,9 @@ class KDSolution : public ISolution {
 
                 json << "}";
             }
-
             json << "]";
+
+            json << "}";
             return json.str();
         }
 

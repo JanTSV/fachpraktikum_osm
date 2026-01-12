@@ -70,6 +70,7 @@
           placeholder="Search buildings…"
           autocomplete="off"/>
         <button type="submit">Search</button>
+        <div id="queryTime" style="margin-top:4px; font-size:12px; color:#555;"></div>
       </form>
       <ul id="searchResults"></ul>
     </div>
@@ -94,7 +95,9 @@
     const chkAdmins = document.getElementById("chkAdmins");
     const chkDynamic = document.getElementById("chkDynamic");
 
+    // Query form
     const resultsList = document.getElementById("searchResults");
+    const queryTimeEl = document.getElementById("queryTime");
 
     function onBuildingSearchSubmit(e) {
       e.preventDefault();
@@ -112,9 +115,13 @@
       })
       .then(r => r.json())
       .then(results => {
-        console.log("Search results:", results);
+        // console.log("Search results:", results.results);
+        // console.log("Query time:", results.time);
+        if (results.time != null) {
+          queryTimeEl.textContent = "Query time: " + results.time + "µs";
+        }
 
-         if (!results.length) {
+        if (!results.results.length) {
           const li = document.createElement("li");
           li.textContent = "No results";
           li.style.cursor = "default";
@@ -122,7 +129,7 @@
           return;
         }
 
-        results.forEach(building => {
+        results.results.forEach(building => {
           const li = document.createElement("li");
 
           let label = "";
