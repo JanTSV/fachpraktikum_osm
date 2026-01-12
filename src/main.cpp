@@ -278,6 +278,12 @@ class InvertedIndex {
             return std::unordered_set<size_t>(candidate_buildings.begin(), candidate_buildings.end());
         }
 
+        std::vector<size_t> get_buildings(const std::string& key) const {
+            auto it = _map.find(key);
+            if (it != _map.end()) return it->second;
+            return {}; 
+        }
+
         const std::map<std::string, std::vector<size_t>>& get_map() const {
             return _map;
         }
@@ -295,7 +301,7 @@ class InvertedIndex {
 struct SuffixArrayEntry {
     public:
         size_t pos;
-        std::vector<size_t> buildings;
+        size_t start;
 
         SuffixArrayEntry() = default;
 
@@ -304,7 +310,7 @@ struct SuffixArrayEntry {
         template<class Archive>
         void serialize(Archive& ar, const unsigned int /*version*/) {
             ar & pos;
-            ar & buildings;
+            ar & start;
         }
 };
 
@@ -312,7 +318,7 @@ class SuffixArray {
     public:
         SuffixArray() = default;
 
-        void add_buildings(const std::vector<size_t>& buildings, const std::string& address) {
+        void add_buildings(const std::string& address) {
             size_t start = _text.size();
 
             // Append address
@@ -321,7 +327,7 @@ class SuffixArray {
 
             // Record suffix starts for this building
             for (size_t i = start; i < _text.size(); ++i) {
-                _entries.push_back({ i, buildings });
+                _entries.push_back({ i, start });
             }
         }
 
@@ -369,7 +375,7 @@ class SuffixArray {
             _entries.swap(sorted);
         }
 
-        std::unordered_set<size_t> search_buildings(const std::string& query) const {
+        std::unordered_set<size_t> search_buildings(const std::string& query, const InvertedIndex& inverted_index) const {
             std::string normalized_query = normalize_address(query);
             std::istringstream iss(normalized_query);
             std::vector<std::string> tokens;
@@ -382,7 +388,7 @@ class SuffixArray {
             bool first_token = true;
 
             for (const auto& t : tokens) {
-                auto buildings = search_suffix(t);
+                auto buildings = search_suffix(t, inverted_index);
                 if (buildings.empty()) return {};
 
                 if (first_token) {
@@ -401,7 +407,7 @@ class SuffixArray {
         std::string _text;
         std::vector<SuffixArrayEntry> _entries;
 
-        const std::vector<size_t> search_suffix(const std::string& q) const {
+        const std::vector<size_t> search_suffix(const std::string& q, const InvertedIndex& inverted_index) const {
             std::vector<size_t> buildings;
 
             size_t left = 0;
@@ -421,7 +427,9 @@ class SuffixArray {
             for (size_t i = left; i < _entries.size(); ++i) {
                 if (compare_suffix(_entries[i].pos, q) != 0)
                     break;
-                buildings.insert(buildings.end(), _entries[i].buildings.begin(), _entries[i].buildings.end());
+                std::string key(&_text[_entries[i].start]);
+                auto bbi = inverted_index.get_buildings(key);
+                buildings.insert(buildings.end(), bbi.begin(), bbi.end());
             }
 
             return buildings;
@@ -976,7 +984,7 @@ class KDSolution : public ISolution {
             bool first = true;
 
             auto start = std::chrono::high_resolution_clock::now();
-            auto buildings = _suffix_array.search_buildings(query);
+            auto buildings = _suffix_array.search_buildings(query, _inverted_index);
             auto end = std::chrono::high_resolution_clock::now();
             auto query_duration = end - start;
             std::cout << "search_buildings() ran in " << get_duration(query_duration) << std::endl;
@@ -1197,7 +1205,7 @@ class KDSolution : public ISolution {
             start = std::chrono::high_resolution_clock::now();
 
             for (auto [key, buildings] : _inverted_index.get_map()) {
-                _suffix_array.add_buildings(buildings, key);
+                _suffix_array.add_buildings(key);
             }
 
             _suffix_array.build();
