@@ -195,197 +195,6 @@ class SuffixArray {
         }
 };
 
-struct SuffixIndirect {
-    size_t string_id;  // String store index
-    size_t offset;  // Position in string
-    size_t length;  // Length of suffix
-
-    private:
-        friend class boost::serialization::access;
-        template<class Archive>
-        void serialize(Archive& ar, const unsigned int /*version*/) {
-            ar & string_id;
-            ar & offset;
-            ar & length;
-        }
-};
-
-struct SuffixTreeEdge {
-    SuffixIndirect suffix;
-    size_t child;
-
-    private:
-        friend class boost::serialization::access;
-        template<class Archive>
-        void serialize(Archive& ar, const unsigned int /*version*/) {
-            ar & suffix;
-            ar & child;
-        }
-};
-
-struct SuffixTreeNode {
-    std::unordered_map<char, SuffixTreeEdge> edges;
-    std::unordered_set<size_t> buildings;
-
-    private:
-        friend class boost::serialization::access;
-        template<class Archive>
-        void serialize(Archive& ar, const unsigned int /*version*/) {
-            ar & edges;
-            ar & buildings;
-        }
-};
-
-class SuffixTree {
-    public:
-        SuffixTree(MappedStringStore& string_store) : _string_store(string_store) {
-            // Create root node
-            _nodes.push_back(SuffixTreeNode{ });
-        }
-
-        void add_building(size_t building_idx, const Building& building) {
-            // Build suffixes for all strings in the building
-            std::vector<SuffixIndirect> suffixes = build_address_suffixes(building);
-            for (size_t i = 0; i < suffixes.size(); i++) {
-                insert_suffix(building_idx, suffixes[i]);
-            }
-        }
-
-        std::unordered_set<size_t> search_buildings(std::string_view query) const {
-            size_t node_idx = 0;
-            size_t q_pos = 0;
-
-            while (q_pos < query.size()) {
-                char c = query[q_pos];
-                const auto& edges = _nodes[node_idx].edges;
-                auto it = edges.find(c);
-                if (it == edges.end()) return {};
-
-                const SuffixTreeEdge& edge = it->second;
-                std::string_view edge_str = _string_store.get(edge.suffix.string_id);
-                size_t edge_len = edge.suffix.length;
-
-                size_t i = 0;
-                while (i < edge_len && q_pos < query.size()) {
-                    if (edge_str[edge.suffix.offset + i] != query[q_pos]) return {};
-                    i++;
-                    q_pos++;
-                }
-
-                node_idx = edge.child;
-            }
-
-            return collect_buildings(node_idx);
-        }
-
-    private:
-        MappedStringStore& _string_store;
-        std::vector<SuffixTreeNode> _nodes;
-
-        std::unordered_set<size_t> collect_buildings(size_t node_idx) const {
-            // Only leaves store buildings, so traverse subtree to collect them
-            std::unordered_set<size_t> result;
-            std::vector<size_t> stack = { node_idx };
-
-            while (!stack.empty()) {
-                size_t idx = stack.back();
-                stack.pop_back();
-
-                const auto& node = _nodes[idx];
-                result.insert(node.buildings.begin(), node.buildings.end());
-
-                for (const auto& [_, edge] : node.edges) {
-                    stack.push_back(edge.child);
-                }
-            }
-
-            return result;
-        }
-
-        std::vector<SuffixIndirect> build_address_suffixes(const Building& building) {
-            std::vector<SuffixIndirect> suffixes;
-
-            auto add_all_suffixes = [&](size_t string_id) {
-                std::string_view s = _string_store.get(string_id);
-                for (size_t i = 0; i < s.size(); i++) {
-                    suffixes.push_back({ string_id, i, s.size() - i });
-                }
-            };
-
-            add_all_suffixes(building.address);
-
-            if (building.shop_name) add_all_suffixes(*building.shop_name);
-            if (building.street_idx) add_all_suffixes(*building.street_idx);
-            if (building.house_number) {
-                const std::string house_str = std::to_string(*building.house_number);
-                add_all_suffixes(_string_store.get_or_add(house_str));
-            }
-
-            return suffixes;
-        }
-
-        void insert_suffix(size_t building_idx, const SuffixIndirect& suffix) {
-            size_t node_idx = 0;
-            size_t offset = 0;
-
-            std::string_view str = _string_store.get(suffix.string_id);
-
-            while (offset < suffix.length) {
-                char c = str[suffix.offset + offset];
-                auto it = _nodes[node_idx].edges.find(c);
-
-                if (it == _nodes[node_idx].edges.end()) {
-                    // Create new leaf node
-                    size_t new_node_idx = _nodes.size();
-                    _nodes.push_back(SuffixTreeNode{});
-                    SuffixIndirect remaining_suffix{ suffix.string_id, suffix.offset + offset, suffix.length - offset };
-                    _nodes[node_idx].edges[c] = { remaining_suffix, new_node_idx };
-                    _nodes[new_node_idx].buildings.insert(building_idx); // Only leaves store buildings
-                    return;
-                }
-
-                SuffixTreeEdge& edge = it->second;
-                std::string_view edge_str = _string_store.get(edge.suffix.string_id);
-                size_t match_len = 0;
-
-                // Find longest common prefix
-                while (match_len < edge.suffix.length && offset + match_len < suffix.length &&
-                    str[suffix.offset + offset + match_len] == edge_str[edge.suffix.offset + match_len]) {
-                    match_len++;
-                }
-
-                if (match_len < edge.suffix.length) {
-                    // Split edge
-                    size_t old_child = edge.child;
-
-                    SuffixIndirect remaining_edge{ edge.suffix.string_id, edge.suffix.offset + match_len, edge.suffix.length - match_len };
-                    size_t split_node = _nodes.size();
-                    _nodes.push_back(SuffixTreeNode{});
-                    _nodes[split_node].edges[_string_store.get(remaining_edge.string_id)[remaining_edge.offset]] = { remaining_edge, old_child };
-
-                    edge.suffix.length = match_len;
-                    edge.child = split_node;
-                }
-
-                offset += match_len;
-                node_idx = edge.child;
-
-                if (offset >= suffix.length) {
-                    // Insert leaf here if fully consumed suffix
-                    _nodes[node_idx].buildings.insert(building_idx);
-                    return;
-                }
-            }
-        }
-
-        friend class boost::serialization::access;
-        template<class Archive>
-        void serialize(Archive& ar, const unsigned int /*version*/) {
-            ar & _string_store;
-            ar & _nodes;
-        }
-};
-
 class KDTree {
     public:
         KDTree() = default;
@@ -616,8 +425,6 @@ class KDTree {
 
 class KDSolution : public ISolution {
     public:
-        // TODO: KDSolution() : _suffix_tree(_string_store) { }
-
         void add_building(double lat, double lon, const char* street, std::optional<HouseNumber> house_number, const char* shop_name) override {
             // Add meta info to _buildings
             std::optional<size_t> street_idx;
@@ -1069,18 +876,7 @@ class KDSolution : public ISolution {
             end = std::chrono::high_resolution_clock::now();
             std::cout << "\tStreet names assigned " << get_duration(end - start) << std::endl;
 
-            // Build suffix tree
-            // TODO: std::cout << "\tBuilding suffix tree..." << std::endl;
-            // start = std::chrono::high_resolution_clock::now();
-
-            // for (size_t i = 0; i < _buildings.size(); i++) {
-            //     std::cout << "\t" << i << " / " << _buildings.size() << std::endl;
-            //     const Building& building = _buildings[i];
-            //     _suffix_tree.add_building(i, building);
-            // }
-
-            // end = std::chrono::high_resolution_clock::now();
-            // std::cout << "\tBuilt suffix tree " << get_duration(end - start) << std::endl;
+            // Build suffix array
             std::cout << "\tBuilding suffix array..." << std::endl;
             start = std::chrono::high_resolution_clock::now();
 
@@ -1156,7 +952,6 @@ class KDSolution : public ISolution {
             return _string_store.get_or_add(addr_string.str());
         }
 
-        // TODO: SuffixTree _suffix_tree;
         SuffixArray _suffix_array;
 
         friend class boost::serialization::access;
@@ -1168,7 +963,7 @@ class KDSolution : public ISolution {
             ar & _streets_tree;
             ar & _streets;
             ar & _hierarchical_admin_areas_trees;
-            // TODO: ar & _suffix_tree;
+            ar & _hierarchical_admin_areas;
             ar & _suffix_array;
         }
 };
