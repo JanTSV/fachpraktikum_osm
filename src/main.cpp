@@ -187,6 +187,52 @@ std::string normalize_address(std::string_view input) {
     return final;
 }
 
+static std::optional<size_t> binary_search(const std::vector<size_t>& v, size_t s, size_t left, size_t right) {
+    if (v.empty()) return std::nullopt;
+
+    while (left < right) {
+        size_t mid = left + (right - left) / 2;
+        if (v[mid] == s) return mid;
+        else if (v[mid] < s) left = mid + 1;
+        else right = mid;
+    }
+
+    return std::nullopt;
+}
+
+static std::optional<size_t> galloping_search(const std::vector<size_t>& v, size_t s, size_t left) {
+    if (v.empty()) return std::nullopt;
+
+    size_t end = left + 1;
+    size_t start = 0;
+
+    for (size_t i = 0; ; i++) {
+        if (end < v.size() && v[end] < s) {
+            start = end;
+            end += 1 << i;
+        } else {
+            break;
+        }
+    }
+
+    return binary_search(v, s, start, std::min(end + 1, v.size()));
+}
+
+static std::vector<size_t> intersect(const std::vector<size_t>& a, const std::vector<size_t>& b) {
+    std::vector<size_t> result;
+
+    size_t left = 0;
+    for (auto be : b) {
+        auto new_left = galloping_search(a, be, left);
+        if (new_left) {
+            left = *new_left;
+            result.push_back(be);
+        }
+    }
+
+    return result;
+}
+
 class InvertedIndex {
     public:
         InvertedIndex() = default;
@@ -232,55 +278,12 @@ class InvertedIndex {
             return std::unordered_set<size_t>(candidate_buildings.begin(), candidate_buildings.end());
         }
 
+        const std::map<std::string, std::vector<size_t>>& get_map() const {
+            return _map;
+        }
+
     private:
         std::map<std::string, std::vector<size_t>> _map;
-
-        static std::optional<size_t> binary_search(const std::vector<size_t>& v, size_t s, size_t left, size_t right) {
-            if (v.empty()) return std::nullopt;
-
-            while (left < right) {
-                size_t mid = left + (right - left) / 2;
-                if (v[mid] == s) return mid;
-                else if (v[mid] < s) left = mid + 1;
-                else right = mid;
-            }
-
-            return std::nullopt;
-        }
-
-        static std::optional<size_t> galloping_search(const std::vector<size_t>& v, size_t s, size_t left) {
-            if (v.empty()) return std::nullopt;
-
-            size_t end = left + 1;
-            size_t start = 0;
-
-            for (size_t i = 0; ; i++) {
-                if (end < v.size() && v[end] < s) {
-                    start = end;
-                    end += 1 << i;
-                } else {
-                    break;
-                }
-            }
-
-            return binary_search(v, s, start, std::min(end + 1, v.size()));
-        }
-
-        static std::vector<size_t> intersect(const std::vector<size_t>& a, const std::vector<size_t>& b) {
-            std::vector<size_t> result;
-
-            size_t left = 0;
-            for (auto be : b) {
-                auto new_left = galloping_search(a, be, left);
-                if (new_left) {
-                    left = *new_left;
-                    result.push_back(be);
-                }
-            }
-
-            return result;
-        }
-
 
         friend class boost::serialization::access;
         template<class Archive>
@@ -292,14 +295,16 @@ class InvertedIndex {
 struct SuffixArrayEntry {
     public:
         size_t pos;
-        size_t building_idx;
+        std::vector<size_t> buildings;
+
+        SuffixArrayEntry() = default;
 
     private:
         friend class boost::serialization::access;
         template<class Archive>
         void serialize(Archive& ar, const unsigned int /*version*/) {
             ar & pos;
-            ar & building_idx;
+            ar & buildings;
         }
 };
 
@@ -307,16 +312,16 @@ class SuffixArray {
     public:
         SuffixArray() = default;
 
-        void add_building(size_t building_idx, const std::string& full_address) {
+        void add_buildings(const std::vector<size_t>& buildings, const std::string& address) {
             size_t start = _text.size();
 
             // Append address
-            _text += full_address;
-            _text.push_back('\0'); // sentinel separator
+            _text += address;
+            _text.push_back('\0');
 
             // Record suffix starts for this building
             for (size_t i = start; i < _text.size(); ++i) {
-                _entries.push_back({ i, building_idx });
+                _entries.push_back({ i, buildings });
             }
         }
 
@@ -365,8 +370,39 @@ class SuffixArray {
         }
 
         std::unordered_set<size_t> search_buildings(const std::string& query) const {
-            std::unordered_set<size_t> result;
-            if (_entries.empty()) return result;
+            std::string normalized_query = normalize_address(query);
+            std::istringstream iss(normalized_query);
+            std::vector<std::string> tokens;
+            std::string token;
+            while (iss >> token) {
+                tokens.push_back(token);
+            }
+
+            std::vector<size_t> candidate_buildings;
+            bool first_token = true;
+
+            for (const auto& t : tokens) {
+                auto buildings = search_suffix(t);
+                if (buildings.empty()) return {};
+
+                if (first_token) {
+                    candidate_buildings = buildings;
+                    first_token = false;
+                } else {
+                    candidate_buildings = intersect(candidate_buildings, buildings);
+                    if (candidate_buildings.empty()) return {};
+                }
+            }
+
+            return std::unordered_set<size_t>(candidate_buildings.begin(), candidate_buildings.end());
+        }
+
+    private:
+        std::string _text;
+        std::vector<SuffixArrayEntry> _entries;
+
+        const std::vector<size_t> search_suffix(const std::string& q) const {
+            std::vector<size_t> buildings;
 
             size_t left = 0;
             size_t right = _entries.size();
@@ -374,7 +410,7 @@ class SuffixArray {
             // lower_bound
             while (left < right) {
                 size_t mid = (left + right) / 2;
-                int cmp = compare_suffix(_entries[mid].pos, query);
+                int cmp = compare_suffix(_entries[mid].pos, q);
                 if (cmp < 0)
                     left = mid + 1;
                 else
@@ -383,17 +419,13 @@ class SuffixArray {
 
             // collect matches
             for (size_t i = left; i < _entries.size(); ++i) {
-                if (compare_suffix(_entries[i].pos, query) != 0)
+                if (compare_suffix(_entries[i].pos, q) != 0)
                     break;
-                result.insert(_entries[i].building_idx);
+                buildings.insert(buildings.end(), _entries[i].buildings.begin(), _entries[i].buildings.end());
             }
 
-            return result;
+            return buildings;
         }
-
-    private:
-        std::string _text;
-        std::vector<SuffixArrayEntry> _entries;
 
         int compare_suffix(size_t pos, const std::string& q) const {
             size_t i = 0;
@@ -994,7 +1026,7 @@ class KDSolution : public ISolution {
             auto buildings = _inverted_index.search_buildings(query);
             auto end = std::chrono::high_resolution_clock::now();
             auto query_duration = end - start;
-            std::cout << "search_buildings() ran in " << get_duration(query_duration) << std::endl;
+            std::cout << "search_buildings_inverted_index() ran in " << get_duration(query_duration) << std::endl;
             json << "\"time\":" << std::chrono::duration_cast<std::chrono::microseconds>(query_duration).count() << ",";
 
             json << "\"results\": [";
@@ -1083,8 +1115,6 @@ class KDSolution : public ISolution {
                         const AdminArea& area = _hierarchical_admin_areas[level][a];
                         if (area.point_in_polygon(p)) {
                             address.push_back(area.name_idx);
-
-                            // TODO: add part address to InvertedIndex
                             break;
                         }
                     }
@@ -1147,7 +1177,7 @@ class KDSolution : public ISolution {
             end = std::chrono::high_resolution_clock::now();
             std::cout << "\tStreet names assigned " << get_duration(end - start) << std::endl;
 
-            // TODO: Build InvertedIndex
+            // Build InvertedIndex
             std::cout << "\tBuilding inverted index..." << std::endl;
             start = std::chrono::high_resolution_clock::now();
             for (size_t i = 0; i < _buildings.size(); ++i) {
@@ -1162,30 +1192,18 @@ class KDSolution : public ISolution {
             end = std::chrono::high_resolution_clock::now();
             std::cout << "\tInverted index built " << get_duration(end - start) << std::endl;
 
-            // TODO: Build suffix array from inverted index
-            // std::cout << "\tBuilding suffix array..." << std::endl;
-            // start = std::chrono::high_resolution_clock::now();
+            // Build suffix array from inverted index
+            std::cout << "\tBuilding suffix array..." << std::endl;
+            start = std::chrono::high_resolution_clock::now();
 
-            // for (size_t i = 0; i < _buildings.size(); ++i) {
-            //     const Building& building = _buildings[i];
-            //     // std::cout << "\t" << i << " / " << _buildings.size() << std::endl;
+            for (auto [key, buildings] : _inverted_index.get_map()) {
+                _suffix_array.add_buildings(buildings, key);
+            }
 
-            //     std::ostringstream addr;
-            //     addr << _string_store.get(building.address);
+            _suffix_array.build();
 
-            //     if (building.shop_name)
-            //         addr << _string_store.get(*building.shop_name);
-            //     if (building.street_idx)
-            //         addr << _string_store.get(*building.street_idx);
-            //     if (building.house_number)
-            //         addr << *building.house_number;
-
-            //     _suffix_array.add_building(i, addr.str());
-            // }
-
-            // _suffix_array.build();
-            // end = std::chrono::high_resolution_clock::now();
-            // std::cout << "\tSuffix array built " << get_duration(end - start) << std::endl;
+            end = std::chrono::high_resolution_clock::now();
+            std::cout << "\tSuffix array built " << get_duration(end - start) << std::endl;
         }
 
         void serialize(const std::string& path) const override {
