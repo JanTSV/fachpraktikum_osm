@@ -775,7 +775,10 @@ class KDSolution : public ISolution {
 
         std::string get_nearest_building(double lat, double lon) const override {
             Point target(lat, lon);
+            auto start = std::chrono::high_resolution_clock::now();
             auto nearest_building = _buildings_tree.find_nearest(target);
+            auto end = std::chrono::high_resolution_clock::now();
+            std::cout << "get_nearest_building() ran in " << get_duration(end - start) << std::endl;
             if (!nearest_building) return "[]";
 
             const Building& building = _buildings[*nearest_building];
@@ -807,7 +810,10 @@ class KDSolution : public ISolution {
 
         std::string get_nearest_street(double lat, double lon) const override {
             Point target(lat, lon);
+            auto start = std::chrono::high_resolution_clock::now();
             auto nearest_street = _streets_tree.find_nearest(target);
+            auto end = std::chrono::high_resolution_clock::now();
+            std::cout << "get_nearest_street() ran in " << get_duration(end - start) << std::endl;
             if (!nearest_street) return "[]";
 
             const Street& street = _streets[*nearest_street];
@@ -838,6 +844,7 @@ class KDSolution : public ISolution {
             // Iterate over all (filtered) areas by level (higher level = more local area)
             // If clicked point is within an area, return it isntantly, otherwise keep track
             // of the nearest area.
+            auto start = std::chrono::high_resolution_clock::now();
             for (auto it = _hierarchical_admin_areas_trees.rbegin();
                 it != _hierarchical_admin_areas_trees.rend() && !done;
                 ++it) {
@@ -875,6 +882,8 @@ class KDSolution : public ISolution {
                     }
                 }
             }
+            auto end = std::chrono::high_resolution_clock::now();
+            std::cout << "get_nearest_admin_area() ran in " << get_duration(end - start) << std::endl;
 
             if (!nearest_area)
                 return "[]";
@@ -908,7 +917,13 @@ class KDSolution : public ISolution {
 
             bool first = true;
 
-            for (size_t building_idx : _suffix_array.search_buildings(query)) {
+            auto start = std::chrono::high_resolution_clock::now();
+            auto buildings = _suffix_array.search_buildings(query);
+            auto end = std::chrono::high_resolution_clock::now();
+            auto query_duration = end - start;
+            std::cout << "search_buildings() ran in " << get_duration(query_duration) << std::endl;
+
+            for (size_t building_idx : buildings) {
                 if (!first) json << ",";
                 first = false;
 
