@@ -167,16 +167,13 @@ std::string normalize_address(std::string_view input) {
             std::string token = collapsed.substr(start, j - start);
 
             // check for abbreviation at end of token
-            bool replaced = false;
             for (const auto& [key, value] : abbrev) {
                 if (token.size() > key.size() &&
                     token.compare(token.size() - key.size(), key.size(), key) == 0) {
                     token.replace(token.size() - key.size(), key.size(), value);
-                    replaced = true;
                     break;
                 } else if (token == key) {
                     token = value;
-                    replaced = true;
                     break;
                 }
             }
@@ -189,6 +186,108 @@ std::string normalize_address(std::string_view input) {
 
     return final;
 }
+
+class InvertedIndex {
+    public:
+        InvertedIndex() = default;
+
+        void add_building(size_t building_idx, const std::string& address) {
+            std::string normalized_address = normalize_address(address);
+            std::istringstream iss(normalized_address);
+            std::string token;
+
+            while (iss >> token) {
+                auto& vec = _map[token];
+                auto it = std::lower_bound(vec.begin(), vec.end(), building_idx);
+                if (it == vec.end() || *it != building_idx)
+                    vec.insert(it, building_idx);
+            }
+        }
+
+        std::unordered_set<size_t> search_buildings(const std::string& query) const {
+            std::string normalized_query = normalize_address(query);
+            std::istringstream iss(normalized_query);
+            std::vector<std::string> tokens;
+            std::string token;
+            while (iss >> token) {
+                tokens.push_back(token);
+            }
+
+            std::vector<size_t> candidate_buildings;
+            bool first_token = true;
+
+            for (const auto& t : tokens) {
+                auto it = _map.find(t);
+                if (it == _map.end()) return {};
+
+                if (first_token) {
+                    candidate_buildings = it->second;
+                    first_token = false;
+                } else {
+                    candidate_buildings = intersect(candidate_buildings, it->second);
+                    if (candidate_buildings.empty()) return {};
+                }
+            }
+
+            return std::unordered_set<size_t>(candidate_buildings.begin(), candidate_buildings.end());
+        }
+
+    private:
+        std::map<std::string, std::vector<size_t>> _map;
+
+        static std::optional<size_t> binary_search(const std::vector<size_t>& v, size_t s, size_t left, size_t right) {
+            if (v.empty()) return std::nullopt;
+
+            while (left < right) {
+                size_t mid = left + (right - left) / 2;
+                if (v[mid] == s) return mid;
+                else if (v[mid] < s) left = mid + 1;
+                else right = mid;
+            }
+
+            return std::nullopt;
+        }
+
+        static std::optional<size_t> galloping_search(const std::vector<size_t>& v, size_t s, size_t left) {
+            if (v.empty()) return std::nullopt;
+
+            size_t end = left + 1;
+            size_t start = 0;
+
+            for (size_t i = 0; ; i++) {
+                if (end < v.size() && v[end] < s) {
+                    start = end;
+                    end += 1 << i;
+                } else {
+                    break;
+                }
+            }
+
+            return binary_search(v, s, start, std::min(end + 1, v.size()));
+        }
+
+        static std::vector<size_t> intersect(const std::vector<size_t>& a, const std::vector<size_t>& b) {
+            std::vector<size_t> result;
+
+            size_t left = 0;
+            for (auto be : b) {
+                auto new_left = galloping_search(a, be, left);
+                if (new_left) {
+                    left = *new_left;
+                    result.push_back(be);
+                }
+            }
+
+            return result;
+        }
+
+
+        friend class boost::serialization::access;
+        template<class Archive>
+        void serialize(Archive& ar, const unsigned int /*version*/) {
+            ar & _map;
+        }
+};
 
 struct SuffixArrayEntry {
     public:
@@ -1428,12 +1527,31 @@ void test_normalize_address() {
     std::cout << "PASSED\n";
 }
 
+void test_inverted_index() {
+    std::cout << "[test_inverted_index] ";
+
+    InvertedIndex index;
+    index.add_building(1, "123 Main Street");
+    index.add_building(2, "456 Main Street");
+    index.add_building(3, "123 Elm Street");
+    
+    auto result = index.search_buildings("123 Street");
+    std::unordered_set<size_t> expected{1, 3};
+    assert(result == expected);
+    
+    result = index.search_buildings("Street 123");
+    expected = {1, 3};
+    assert(result == expected);
+    std::cout << "PASSED\n";
+}
+
 void test() {
     test_basic_suffixes();
     test_multiple_buildings();
     test_partial_overlaps();
     test_no_cross_building_match();
     test_normalize_address();
+    test_inverted_index();
 }
 
 #endif
