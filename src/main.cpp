@@ -389,6 +389,7 @@ class SuffixArray {
 
             for (const auto& t : tokens) {
                 auto buildings = search_suffix(t, inverted_index);
+                // std::cout << t << " : " << buildings.size() << std::endl;
                 if (buildings.empty()) return {};
 
                 if (first_token) {
@@ -396,6 +397,8 @@ class SuffixArray {
                     first_token = false;
                 } else {
                     candidate_buildings = intersect(candidate_buildings, buildings);
+                    // std::cout << "Intersected: " << candidate_buildings.size() << std::endl;
+
                     if (candidate_buildings.empty()) return {};
                 }
             }
@@ -432,6 +435,7 @@ class SuffixArray {
                 buildings.insert(buildings.end(), bbi.begin(), bbi.end());
             }
 
+            std::sort(buildings.begin(), buildings.end());
             return buildings;
         }
 
