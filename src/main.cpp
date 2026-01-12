@@ -16,6 +16,7 @@
 #include <unordered_set>
 #include <unordered_map>
 #include <execution>
+#include <cassert>
 
 #include <osmium/io/any_input.hpp>
 #include <osmium/osm/area.hpp>
@@ -68,6 +69,125 @@ std::string get_duration(const Duration& duration) {
     out << "]";
 
     return out.str();
+}
+
+inline bool is_word_char(char c) {
+    return std::isalnum(static_cast<unsigned char>(c));
+}
+
+std::string normalize_address(std::string_view input) {
+    std::string out;
+    out.reserve(input.size() * 2);
+
+    size_t i = 0;
+    while (i < input.size()) {
+        unsigned char c = input[i];
+
+        // UTF-8 umlaute, ß and special symbols
+        if (i + 1 < input.size() && c == 0xC3) {
+            unsigned char d = input[i + 1];
+            switch (d) {
+                case 0xA4: case 0x84: out += "ae"; break; // ä
+                case 0xB6: case 0x96: out += "oe"; break; // ö
+                case 0xBC: case 0x9C: out += "ue"; break; // ü
+                case 0x9F:           out += "ss"; break;  // ß
+                case 0xA0: case 0xA1: case 0xA2: case 0xA3: case 0xA5: case 0xA6: out += "a"; break; // à á â ã å
+                case 0xA8: out += "e"; break; // è
+                case 0xA9: out += "e"; break; // é
+                case 0xAA: out += "e"; break; // ê
+                case 0xAB: out += "e"; break; // ë
+                case 0xAC: out += "i"; break; // ì
+                case 0xAD: out += "i"; break; // í
+                case 0xAE: out += "i"; break; // î
+                case 0xAF: out += "i"; break; // ï
+                case 0xB2: out += "o"; break; // ò
+                case 0xB3: out += "o"; break; // ó
+                case 0xB4: out += "o"; break; // ô
+                case 0xB5: out += "o"; break; // õ
+                case 0xB9: out += "u"; break; // ù
+                case 0xBA: out += "u"; break; // ú
+                case 0xBB: out += "u"; break; // û
+                case 0xB1: out += "n"; break; // ñ
+                case 0xA7: out += "c"; break; // ç
+                default: out += ' '; break;   // unknown → space
+            }
+            i += 2;
+            continue;
+        }
+
+        // ASCII lowercase
+        c = std::tolower(c);
+
+        // replace punctuation with spaces
+        if (std::ispunct(c))
+            out.push_back(' ');
+        else
+            out.push_back(c);
+
+        ++i;
+    }
+
+    // collapse whitespace
+    std::string collapsed;
+    collapsed.reserve(out.size());
+    bool prev_space = true;
+    for (char c : out) {
+        if (std::isspace(static_cast<unsigned char>(c))) {
+            if (!prev_space) {
+                collapsed.push_back(' ');
+                prev_space = true;
+            }
+        } else {
+            collapsed.push_back(c);
+            prev_space = false;
+        }
+    }
+    if (!collapsed.empty() && collapsed.back() == ' ')
+        collapsed.pop_back();
+
+    // expand abbreviations
+    static const std::unordered_map<std::string, std::string> abbrev = {
+        {"str", "strasse"},
+        {"pl",  "platz"},
+        {"rd",  "road"},
+        {"ave", "avenue"}
+    };
+
+    std::string final;
+    final.reserve(collapsed.size() * 2);
+
+    size_t j = 0;
+    while (j < collapsed.size()) {
+        if (std::isalnum(static_cast<unsigned char>(collapsed[j]))) {
+            size_t start = j;
+            while (j < collapsed.size() &&
+                   std::isalnum(static_cast<unsigned char>(collapsed[j])))
+                ++j;
+
+            std::string token = collapsed.substr(start, j - start);
+
+            // check for abbreviation at end of token
+            bool replaced = false;
+            for (const auto& [key, value] : abbrev) {
+                if (token.size() > key.size() &&
+                    token.compare(token.size() - key.size(), key.size(), key) == 0) {
+                    token.replace(token.size() - key.size(), key.size(), value);
+                    replaced = true;
+                    break;
+                } else if (token == key) {
+                    token = value;
+                    replaced = true;
+                    break;
+                }
+            }
+
+            final += token;
+        } else {
+            final.push_back(collapsed[j++]);
+        }
+    }
+
+    return final;
 }
 
 struct SuffixArrayEntry {
@@ -1294,11 +1414,26 @@ void test_no_cross_building_match() {
     std::cout << "PASSED\n";
 }
 
+void test_normalize_address() {
+    std::cout << "[test_normalize_address] ";
+
+    assert(normalize_address("Hauptstraße 12") == "hauptstrasse 12");
+    assert(normalize_address("Hauptstr. 12") == "hauptstrasse 12");
+    assert(normalize_address("Müller-Pl.") == "mueller platz");
+    assert(normalize_address("St.-Johannes-Str.") == "st johannes strasse");
+    assert(normalize_address("São Paulo Ave.") == "sao paulo avenue");
+    assert(normalize_address("  Haupt--Str. ") == "haupt strasse");
+    assert(normalize_address("Strave") == "stravenue");
+
+    std::cout << "PASSED\n";
+}
+
 void test() {
     test_basic_suffixes();
     test_multiple_buildings();
     test_partial_overlaps();
     test_no_cross_building_match();
+    test_normalize_address();
 }
 
 #endif
