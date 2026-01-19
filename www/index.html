@@ -110,11 +110,16 @@
       
       if (!query) return;
 
+      const boundingBox = getBoundingBox();
       let api = chkInverted.checked ? "/search_buildings_inverted_index" : "/search_buildings";
       fetch(api, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: query })
+        body: JSON.stringify({ swLat: boundingBox.swLat,
+                               swLon: boundingBox.swLon,
+                               neLat: boundingBox.neLat,
+                               neLon: boundingBox.neLon,
+                               query: query })
       })
       .then(r => r.json())
       .then(results => {

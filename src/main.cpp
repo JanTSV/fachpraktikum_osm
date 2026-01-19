@@ -1499,9 +1499,16 @@ int main(int argc, char* argv[]) {
 
     // API endpoints for geocoder
     svr.Post("/search_buildings", [&solution](const httplib::Request& req, httplib::Response& res) {
+        double sw_lat, sw_lon, ne_lat, ne_lon;
         char query[1024];
 
-        bool ok = (sscanf(req.body.c_str(), R"({"query":"%1023[^"]"})", query) == 1);
+        bool ok = (sscanf(req.body.c_str(), 
+                     R"({"swLat":%lf,"swLon":%lf,"neLat":%lf,"neLon":%lf,"query":"%1023[^"]"})", 
+                            &sw_lat,
+                            &sw_lon,
+                            &ne_lat,
+                            &ne_lon,
+                            query) == 5);
         if (!ok) {
             res.status = 400;
             res.set_content("Invalid JSON", "text/plain");
@@ -1519,9 +1526,17 @@ int main(int argc, char* argv[]) {
     });
 
     svr.Post("/search_buildings_inverted_index", [&solution](const httplib::Request& req, httplib::Response& res) {
+        double sw_lat, sw_lon, ne_lat, ne_lon;
         char query[1024];
 
-        bool ok = (sscanf(req.body.c_str(), R"({"query":"%1023[^"]"})", query) == 1);
+        bool ok = (sscanf(req.body.c_str(), 
+                     R"({"swLat":%lf,"swLon":%lf,"neLat":%lf,"neLon":%lf,"query":"%1023[^"]"})", 
+                            &sw_lat,
+                            &sw_lon,
+                            &ne_lat,
+                            &ne_lon,
+                            query) == 5);
+
         if (!ok) {
             res.status = 400;
             res.set_content("Invalid JSON", "text/plain");
