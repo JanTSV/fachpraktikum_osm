@@ -981,7 +981,67 @@ class KDSolution : public ISolution {
             return json.str();
         }
 
-        std::string search_buildings(std::string& query) const override {
+        std::vector<std::pair<size_t, int>> sort_buildings(std::unordered_set<size_t>& buildings, std::string& query, double sw_lat, double sw_lon, double ne_lat, double ne_lon) const {
+            // Sort buildings by heuristic (distance to view and pattern match length)
+            std::vector<std::pair<size_t, int>> sorted_buildings;
+            sorted_buildings.reserve(buildings.size());
+
+            double center_lat = 0.5 * (sw_lat + ne_lat);
+            double center_lon = 0.5 * (sw_lon + ne_lon);
+            double max_dist = std::max(ne_lat - sw_lat, ne_lon - sw_lon) * 0.5;
+
+            for (size_t building_idx : buildings) {
+                const Building& building = _buildings[building_idx];
+                int rank = 0;
+
+                if (building.location.x >= sw_lat &&
+                    building.location.x <= ne_lat &&
+                    building.location.y >= sw_lon &&
+                    building.location.y <= ne_lon) {
+                    rank += 100;
+                }
+
+                double dlat = building.location.x - center_lat;
+                double dlon = building.location.y - center_lon;
+                double dist = std::sqrt(dlat * dlat + dlon * dlon);
+
+                if (dist < max_dist) {
+                    rank += int(100 * (1.0 - dist / max_dist));
+                }
+
+                std::ostringstream addr;
+
+                addr << _string_store.get(building.address);
+
+                if (building.shop_name) {
+                    addr << _string_store.get(*building.shop_name);
+                }
+                if (building.street_idx) {
+                    addr << _string_store.get(*building.street_idx);
+                }
+
+                if (building.house_number) {
+                    addr << std::to_string(*building.house_number);
+                }
+
+                std::string normalized_addr = normalize_address(addr.str());
+                std::string normalized_query = normalize_address(query);
+                rank += int(100 * ((double)normalized_query.length() / normalized_addr.length()));
+
+                std::sort(sorted_buildings.begin(),
+                          sorted_buildings.end(),
+                          [](const std::pair<size_t, int>& a, const std::pair<size_t, int>& b) {
+                              return a.second == b.second ? a.first < b.first : a.second > b.second;
+                          }
+                );
+
+                sorted_buildings.emplace_back(building_idx, rank);
+            }
+
+            return sorted_buildings;
+        }
+
+        std::string search_buildings(std::string& query, double sw_lat, double sw_lon, double ne_lat, double ne_lon) const override {
             std::ostringstream json;
             json << "{";
 
@@ -994,8 +1054,11 @@ class KDSolution : public ISolution {
             std::cout << "search_buildings() ran in " << get_duration(query_duration) << std::endl;
             json << "\"time\":" << std::chrono::duration_cast<std::chrono::microseconds>(query_duration).count() << ",";
 
+            // Sort buildings by heuristic (distance to view and pattern match length)
+            auto sorted_buildings = sort_buildings(buildings, query, sw_lat, sw_lon, ne_lat, ne_lon);
+
             json << "\"results\": [";
-            for (size_t building_idx : buildings) {
+            for (auto [building_idx, _] : sorted_buildings) {
                 if (!first) json << ",";
                 first = false;
 
@@ -1028,7 +1091,7 @@ class KDSolution : public ISolution {
             return json.str();
         }
 
-        std::string search_buildings_inverted_index(std::string& query) const override {
+        std::string search_buildings_inverted_index(std::string& query, double sw_lat, double sw_lon, double ne_lat, double ne_lon) const override {
             std::ostringstream json;
             json << "{";
 
@@ -1041,8 +1104,11 @@ class KDSolution : public ISolution {
             std::cout << "search_buildings_inverted_index() ran in " << get_duration(query_duration) << std::endl;
             json << "\"time\":" << std::chrono::duration_cast<std::chrono::microseconds>(query_duration).count() << ",";
 
+            // Sort buildings by heuristic (distance to view and pattern match length)
+            auto sorted_buildings = sort_buildings(buildings, query, sw_lat, sw_lon, ne_lat, ne_lon);
+
             json << "\"results\": [";
-            for (size_t building_idx : buildings) {
+            for (auto [building_idx, _] : sorted_buildings) {
                 if (!first) json << ",";
                 first = false;
 
@@ -1520,7 +1586,7 @@ int main(int argc, char* argv[]) {
         res.status = 200;
         
         res.set_content(
-            solution.search_buildings(q),
+            solution.search_buildings(q, sw_lat, sw_lon, ne_lat, ne_lon),
             "application/json"
         );
     });
@@ -1548,7 +1614,7 @@ int main(int argc, char* argv[]) {
         res.status = 200;
         
         res.set_content(
-            solution.search_buildings_inverted_index(q),
+            solution.search_buildings_inverted_index(q, sw_lat, sw_lon, ne_lat, ne_lon),
             "application/json"
         );
     });
