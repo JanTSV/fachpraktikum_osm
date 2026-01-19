@@ -89,6 +89,7 @@
     const buildingsLayer = L.layerGroup([], { renderer: L.canvas() }).addTo(map);
     const streetsLayer = L.layerGroup().addTo(map);
     const adminLayer = L.layerGroup().addTo(map);
+    const searchResultsLayer = L.layerGroup({ renderer: L.canvas() }).addTo(map);
 
     // checkboxes
     const chkBuildings = document.getElementById("chkBuildings");
@@ -105,12 +106,13 @@
       e.preventDefault();
       const query = document.getElementById("searchInput").value.trim();
       // console.log("Search query:", query);
-    
       resultsList.innerHTML = "";
+      searchResultsLayer.clearLayers();
       
       if (!query) return;
 
       const boundingBox = getBoundingBox();
+      const bounds = map.getBounds();
       let api = chkInverted.checked ? "/search_buildings_inverted_index" : "/search_buildings";
       fetch(api, {
         method: "POST",
@@ -138,6 +140,7 @@
         }
 
         results.results.forEach(building => {
+          // List elements
           const li = document.createElement("li");
 
           let label = "";
@@ -151,6 +154,25 @@
           };
 
           resultsList.appendChild(li);
+
+          // Buildings in view
+          if (building.lat != null && 
+              building.lon != null &&
+              bounds.contains([building.lat, building.lon])) {
+                // Mark in the list
+                li.style.color = "purple";
+                li.style.fontWeight = "500";
+
+                // Mark on the map
+                const marker = L.circleMarker([building.lat, building.lon], {
+                  radius: 5,
+                  color: "purple",
+                  weight: 2,
+                  fillOpacity: 0.7,
+                  renderer: searchResultsLayer.options.renderer
+                })
+                .addTo(searchResultsLayer);
+          }
         });
       })
     }
