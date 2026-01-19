@@ -219,6 +219,9 @@ static std::optional<size_t> galloping_search(const std::vector<size_t>& v, size
 }
 
 static std::vector<size_t> intersect(const std::vector<size_t>& a, const std::vector<size_t>& b) {
+    // If b is large and a is small this gets inefficient, so swap here
+    if (a.size() < b.size()) return intersect(b, a);
+    
     std::vector<size_t> result;
 
     size_t left = 0;
