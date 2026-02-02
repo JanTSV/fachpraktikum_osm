@@ -1097,14 +1097,38 @@ class KDSolution : public ISolution {
             bool first = true;
 
             auto start = std::chrono::high_resolution_clock::now();
-            auto [buildings, _] = _suffix_array.search_buildings(query, _inverted_index);
+            auto [buildings, to_buildings] = _suffix_array.search_buildings(query, _inverted_index);
             auto end = std::chrono::high_resolution_clock::now();
             auto query_duration = end - start;
             std::cout << "search_buildings() ran in " << get_duration(query_duration) << std::endl;
             json << "\"time\":" << std::chrono::duration_cast<std::chrono::microseconds>(query_duration).count() << ",";
-
-            // Sort buildings by heuristic (distance to view and pattern match length)
+            
             auto sorted_buildings = sort_buildings(buildings, query, sw_lat, sw_lon, ne_lat, ne_lon);
+
+            if (!to_buildings.empty()) {
+                // Closest to query: Sort buildings, take heuristically best one and find nearest buildings to that
+                auto sorted_to_buildings = sort_buildings(to_buildings, query, sw_lat, sw_lon, ne_lat, ne_lon);
+                if (!sorted_to_buildings.empty()) {
+                    auto [best_building_idx, _] = sorted_to_buildings[0];
+                    auto& best_building = _buildings[best_building_idx];
+
+                    double dlat = ne_lat - sw_lat;
+                    double dlon = ne_lon - sw_lon;
+
+                    double new_sw_lat = best_building.location.x - dlat / 2;
+                    double new_ne_lat = best_building.location.x + dlat / 2;
+                    double new_sw_lon = best_building.location.y - dlon / 2;
+                    double new_ne_lon = best_building.location.y + dlon / 2;
+                    sorted_buildings = sort_buildings(
+                        buildings,
+                        query,
+                        new_sw_lat,
+                        new_sw_lon,
+                        new_ne_lat,
+                        new_ne_lon
+                    );
+                }
+            }
 
             json << "\"results\": [";
             for (auto [building_idx, _] : sorted_buildings) {
@@ -1189,7 +1213,6 @@ class KDSolution : public ISolution {
             json << "}";
             return json.str();
         }
-
 
         void preprocess() override {
             std::vector<std::pair<Point, size_t>> pts;
@@ -1801,10 +1824,6 @@ void test_inverted_index() {
     expected = {1, 3};
     assert(result == expected);
     std::cout << "PASSED\n";
-}
-
-void test_special_query() {
-
 }
 
 void test() {
