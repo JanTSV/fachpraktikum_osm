@@ -377,35 +377,72 @@ class SuffixArray {
             _entries.swap(sorted);
         }
 
-        std::unordered_set<size_t> search_buildings(const std::string& query, const InvertedIndex& inverted_index) const {
-            std::string normalized_query = normalize_address(query);
-            std::istringstream iss(normalized_query);
-            std::vector<std::string> tokens;
-            std::string token;
-            while (iss >> token) {
-                tokens.push_back(token);
-            }
-
-            std::vector<size_t> candidate_buildings;
-            bool first_token = true;
+        std::vector<size_t> search_all_tokens(const std::vector<std::string>& tokens, const InvertedIndex& inverted_index) const {
+            std::vector<size_t> result;
+            bool first = true;
 
             for (const auto& t : tokens) {
                 auto buildings = search_suffix(t, inverted_index);
-                // std::cout << t << " : " << buildings.size() << std::endl;
                 if (buildings.empty()) return {};
 
-                if (first_token) {
-                    candidate_buildings = buildings;
-                    first_token = false;
+                if (first) {
+                    result = std::move(buildings);
+                    first = false;
                 } else {
-                    candidate_buildings = intersect(candidate_buildings, buildings);
-                    // std::cout << "Intersected: " << candidate_buildings.size() << std::endl;
-
-                    if (candidate_buildings.empty()) return {};
+                    result = intersect(result, buildings);
+                    if (result.empty()) return {};
                 }
             }
 
-            return std::unordered_set<size_t>(candidate_buildings.begin(), candidate_buildings.end());
+            return result;
+        }
+
+        struct ParsedQuery {
+            std::vector<std::string> from_tokens;
+            std::vector<std::string> to_tokens;
+        };
+
+        ParsedQuery parse_query(const std::vector<std::string>& tokens) const {
+            ParsedQuery pq;
+
+            if (!tokens.empty() && tokens[0] == "closest") {
+                auto it = std::find(tokens.begin(), tokens.end(), "to");
+                if (it == tokens.end() || it == tokens.begin() + 1)
+                    return pq;
+
+                pq.from_tokens.assign(tokens.begin() + 1, it);
+                pq.to_tokens.assign(it + 1, tokens.end());
+            } else {
+                pq.from_tokens = tokens;
+            }
+
+            return pq;
+        }
+
+        std::pair<std::unordered_set<size_t>, std::unordered_set<size_t>> search_buildings(const std::string& query, const InvertedIndex& inverted_index) const
+        {
+            std::string normalized_query = normalize_address(query);
+
+            std::istringstream iss(normalized_query);
+            std::vector<std::string> tokens{
+                std::istream_iterator<std::string>{iss},
+                std::istream_iterator<std::string>{}
+            };
+
+            ParsedQuery parsed = parse_query(tokens);
+
+            auto candidate_buildings =
+                search_all_tokens(parsed.from_tokens, inverted_index);
+
+            auto to_buildings =
+                parsed.to_tokens.empty()
+                    ? std::vector<size_t>{}
+                    : search_all_tokens(parsed.to_tokens, inverted_index);
+
+            return {
+                {candidate_buildings.begin(), candidate_buildings.end()},
+                {to_buildings.begin(), to_buildings.end()}
+            };
         }
 
     private:
@@ -1060,7 +1097,7 @@ class KDSolution : public ISolution {
             bool first = true;
 
             auto start = std::chrono::high_resolution_clock::now();
-            auto buildings = _suffix_array.search_buildings(query, _inverted_index);
+            auto [buildings, _] = _suffix_array.search_buildings(query, _inverted_index);
             auto end = std::chrono::high_resolution_clock::now();
             auto query_duration = end - start;
             std::cout << "search_buildings() ran in " << get_duration(query_duration) << std::endl;
@@ -1667,16 +1704,16 @@ void test_basic_suffixes() {
 
     auto [index, sa] = init_suffix_array_test("abc");
 
-    auto result = sa.search_buildings("a", index);
-    if (result.count(0) != 1)
+    auto [res1, _1] = sa.search_buildings("a", index);
+    if (res1.count(0) != 1)
         throw std::runtime_error("Failed search 'a'");
 
-    result = sa.search_buildings("bc", index);
-    if (result.count(0) != 1)
+    auto [res2, _2] = sa.search_buildings("bc", index);
+    if (res2.count(0) != 1)
         throw std::runtime_error("Failed search 'bc'");
 
-    result = sa.search_buildings("d", index);
-    if (!result.empty())
+    auto [res3, _3] = sa.search_buildings("d", index);
+    if (!res3.empty())
         throw std::runtime_error("Failed search 'd'");
 
     std::cout << "PASSED\n";
@@ -1687,15 +1724,15 @@ void test_multiple_buildings() {
 
     auto [index, sa] = init_suffix_array_test("apple street", "banana ave");
 
-    auto res_a = sa.search_buildings("apple", index);
+    auto [res_a, _1] = sa.search_buildings("apple", index);
     if (res_a.size() != 1 || res_a.count(0) != 1)
         throw std::runtime_error("Failed search 'apple'");
 
-    auto res_b = sa.search_buildings("banana", index);
+    auto [res_b, _2] = sa.search_buildings("banana", index);
     if (res_b.size() != 1 || res_b.count(1) != 1)
         throw std::runtime_error("Failed search 'banana'");
 
-    auto res_street = sa.search_buildings("street", index);
+    auto [res_street, _3] = sa.search_buildings("street", index);
     if (res_street.size() != 1 || res_street.count(0) != 1)
         throw std::runtime_error("Failed search 'street'");
 
@@ -1707,16 +1744,16 @@ void test_partial_overlaps() {
 
     auto [index, sa] = init_suffix_array_test("123 main", "123 maple");
 
-    auto res = sa.search_buildings("123", index);
-    if (res.size() != 2)
+    auto [res1, _1] = sa.search_buildings("123", index);
+    if (res1.size() != 2)
         throw std::runtime_error("Failed search '123'");
 
-    res = sa.search_buildings("main", index);
-    if (res.size() != 1 || res.count(0) != 1)
+    auto [res2, _2] = sa.search_buildings("main", index);
+    if (res2.size() != 1 || res2.count(0) != 1)
         throw std::runtime_error("Failed search 'main'");
 
-    res = sa.search_buildings("maple", index);
-    if (res.size() != 1 || res.count(1) != 1)
+    auto [res3, _3] = sa.search_buildings("maple", index);
+    if (res3.size() != 1 || res3.count(1) != 1)
         throw std::runtime_error("Failed search 'maple'");
 
     std::cout << "PASSED\n";
@@ -1727,7 +1764,7 @@ void test_no_cross_building_match() {
 
     auto [index, sa] = init_suffix_array_test("abc", "def");
 
-    auto res = sa.search_buildings("cde", index);
+    auto [res, _] = sa.search_buildings("cde", index);
     if (!res.empty())
         throw std::runtime_error("Matched across building boundary");
 
