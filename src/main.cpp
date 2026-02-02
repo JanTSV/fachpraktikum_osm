@@ -15,7 +15,6 @@
 #include <fstream>
 #include <unordered_set>
 #include <unordered_map>
-#include <execution>
 #include <cassert>
 
 #include <osmium/io/any_input.hpp>
@@ -321,7 +320,7 @@ class SuffixArray {
     public:
         SuffixArray() = default;
 
-        void add_buildings(const std::string& address) {
+        void add_building(const std::string& address) {
             size_t start = _text.size();
 
             // Append address
@@ -1278,7 +1277,7 @@ class KDSolution : public ISolution {
             start = std::chrono::high_resolution_clock::now();
 
             for (auto [key, buildings] : _inverted_index.get_map()) {
-                _suffix_array.add_buildings(key);
+                _suffix_array.add_building(key);
             }
 
             _suffix_array.build();
@@ -1364,10 +1363,11 @@ struct Configuration {
         int port = DEFAULT_PORT;
 };
 
-int main(int argc, char* argv[]) {
 #ifdef TEST
+int main() {
     test();
 #else
+int main(int argc, char* argv[]) {
     Configuration configuration;
 
     // Command line parsing
@@ -1630,22 +1630,42 @@ int main(int argc, char* argv[]) {
 }
 
 #ifdef TEST
+template<typename... Args>
+std::pair<InvertedIndex, SuffixArray> init_suffix_array_test(Args... args) {
+    InvertedIndex index;
+    SuffixArray sa;
+
+    size_t i = 0;
+    (
+        (
+            index.add_building(i++, args)
+        ),
+        ...
+    );
+
+    for (auto [key, _] : index.get_map()) {
+        sa.add_building(key);
+    }
+
+    sa.build();
+
+    return std::make_pair(index, sa);
+}
+
 void test_basic_suffixes() {
     std::cout << "[test_basic_suffixes] ";
 
-    SuffixArray sa;
-    sa.add_building(0, "abc");
-    sa.build();
+    auto [index, sa] = init_suffix_array_test("abc");
 
-    auto result = sa.search_buildings("a");
+    auto result = sa.search_buildings("a", index);
     if (result.count(0) != 1)
         throw std::runtime_error("Failed search 'a'");
 
-    result = sa.search_buildings("bc");
+    result = sa.search_buildings("bc", index);
     if (result.count(0) != 1)
         throw std::runtime_error("Failed search 'bc'");
 
-    result = sa.search_buildings("d");
+    result = sa.search_buildings("d", index);
     if (!result.empty())
         throw std::runtime_error("Failed search 'd'");
 
@@ -1655,20 +1675,17 @@ void test_basic_suffixes() {
 void test_multiple_buildings() {
     std::cout << "[test_multiple_buildings] ";
 
-    SuffixArray sa;
-    sa.add_building(0, "apple street");
-    sa.add_building(1, "banana ave");
-    sa.build();
+    auto [index, sa] = init_suffix_array_test("apple street", "banana ave");
 
-    auto res_a = sa.search_buildings("apple");
+    auto res_a = sa.search_buildings("apple", index);
     if (res_a.size() != 1 || res_a.count(0) != 1)
         throw std::runtime_error("Failed search 'apple'");
 
-    auto res_b = sa.search_buildings("banana");
+    auto res_b = sa.search_buildings("banana", index);
     if (res_b.size() != 1 || res_b.count(1) != 1)
         throw std::runtime_error("Failed search 'banana'");
 
-    auto res_street = sa.search_buildings("street");
+    auto res_street = sa.search_buildings("street", index);
     if (res_street.size() != 1 || res_street.count(0) != 1)
         throw std::runtime_error("Failed search 'street'");
 
@@ -1678,20 +1695,17 @@ void test_multiple_buildings() {
 void test_partial_overlaps() {
     std::cout << "[test_partial_overlaps] ";
 
-    SuffixArray sa;
-    sa.add_building(0, "123 main");
-    sa.add_building(1, "123 maple");
-    sa.build();
+    auto [index, sa] = init_suffix_array_test("123 main", "123 maple");
 
-    auto res = sa.search_buildings("123");
+    auto res = sa.search_buildings("123", index);
     if (res.size() != 2)
         throw std::runtime_error("Failed search '123'");
 
-    res = sa.search_buildings("main");
+    res = sa.search_buildings("main", index);
     if (res.size() != 1 || res.count(0) != 1)
         throw std::runtime_error("Failed search 'main'");
 
-    res = sa.search_buildings("maple");
+    res = sa.search_buildings("maple", index);
     if (res.size() != 1 || res.count(1) != 1)
         throw std::runtime_error("Failed search 'maple'");
 
@@ -1701,12 +1715,9 @@ void test_partial_overlaps() {
 void test_no_cross_building_match() {
     std::cout << "[test_no_cross_building_match] ";
 
-    SuffixArray sa;
-    sa.add_building(0, "abc");
-    sa.add_building(1, "def");
-    sa.build();
+    auto [index, sa] = init_suffix_array_test("abc", "def");
 
-    auto res = sa.search_buildings("cde");
+    auto res = sa.search_buildings("cde", index);
     if (!res.empty())
         throw std::runtime_error("Matched across building boundary");
 
@@ -1745,6 +1756,10 @@ void test_inverted_index() {
     std::cout << "PASSED\n";
 }
 
+void test_special_query() {
+
+}
+
 void test() {
     test_basic_suffixes();
     test_multiple_buildings();
@@ -1752,6 +1767,8 @@ void test() {
     test_no_cross_building_match();
     test_normalize_address();
     test_inverted_index();
+
+    std::cout << "=> PASSED all tests" << std::endl;
 }
 
 #endif
