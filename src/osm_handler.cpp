@@ -8,7 +8,7 @@
 OSMHandler::OSMHandler(ISolution& solution) : _solution(solution) { }
 
 bool OSMHandler::is_building(const osmium::TagList& tags) {
-    return tags["building"];
+    return tags["building"] || tags["shop"] || tags["amenity"];
 }
 
 bool OSMHandler::is_street(const osmium::TagList& tags) {
@@ -28,11 +28,17 @@ const char* OSMHandler::get_street_name(const osmium::TagList& tags) {
 }
 
 const char* OSMHandler::get_shop_name(const osmium::TagList& tags) {
-    const char* street = tags["name:de"];
-    if (!street) {
-        street = tags["name"];
+    const char* shop = tags["name:de"];
+    if (!shop) {
+        shop = tags["name"];
     }
-    return street;
+    if (!shop) {
+        shop = tags["brand:de"];
+    }
+    if (!shop) {
+        shop = tags["brand"];
+    }
+    return shop;
 }
 
 const char* OSMHandler::get_name(const osmium::TagList& tags) {
