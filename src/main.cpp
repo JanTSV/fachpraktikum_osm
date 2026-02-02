@@ -983,36 +983,38 @@ class KDSolution : public ISolution {
             return json.str();
         }
 
-        std::vector<std::pair<size_t, int>> sort_buildings(std::unordered_set<size_t>& buildings, std::string& query, double sw_lat, double sw_lon, double ne_lat, double ne_lon) const {
-            // Sort buildings by heuristic (distance to view and pattern match length)
+        std::vector<std::pair<size_t, int>>sort_buildings(std::unordered_set<size_t>& buildings, std::string& query, double sw_lat, double sw_lon, double ne_lat, double ne_lon) const
+        {
+            // (building_idx, rank)
             std::vector<std::pair<size_t, int>> sorted_buildings;
             sorted_buildings.reserve(buildings.size());
 
             double center_lat = 0.5 * (sw_lat + ne_lat);
             double center_lon = 0.5 * (sw_lon + ne_lon);
-            double max_dist = std::max(ne_lat - sw_lat, ne_lon - sw_lon) * 0.5;
+
+            std::string normalized_query = normalize_address(query);
 
             for (size_t building_idx : buildings) {
                 const Building& building = _buildings[building_idx];
                 int rank = 0;
 
+                // Higher rank for being inside view
                 if (building.location.x >= sw_lat &&
                     building.location.x <= ne_lat &&
                     building.location.y >= sw_lon &&
                     building.location.y <= ne_lon) {
-                    rank += 100;
+                    rank += 200;
                 }
 
+                // Closer to center -> higher rank
                 double dlat = building.location.x - center_lat;
                 double dlon = building.location.y - center_lon;
                 double dist = std::sqrt(dlat * dlat + dlon * dlon);
+                double distance_score = 1.0 / (1.0 + dist);
+                rank += static_cast<int>(150.0 * distance_score);
 
-                if (dist < max_dist) {
-                    rank += int(100 * (1.0 - dist / max_dist));
-                }
-
+                // Query coverage
                 std::ostringstream addr;
-
                 addr << _string_store.get(building.address);
 
                 if (building.shop_name) {
@@ -1021,24 +1023,32 @@ class KDSolution : public ISolution {
                 if (building.street_idx) {
                     addr << _string_store.get(*building.street_idx);
                 }
-
                 if (building.house_number) {
                     addr << std::to_string(*building.house_number);
                 }
 
                 std::string normalized_addr = normalize_address(addr.str());
-                std::string normalized_query = normalize_address(query);
-                rank += int(100 * ((double)normalized_query.length() / normalized_addr.length()));
 
-                std::sort(sorted_buildings.begin(),
-                          sorted_buildings.end(),
-                          [](const std::pair<size_t, int>& a, const std::pair<size_t, int>& b) {
-                              return a.second == b.second ? a.first < b.first : a.second > b.second;
-                          }
-                );
+                if (!normalized_addr.empty()) {
+                    double match_ratio =
+                        static_cast<double>(normalized_query.length()) /
+                        static_cast<double>(normalized_addr.length());
+
+                    match_ratio = std::min(match_ratio, 1.0);
+                    rank += static_cast<int>(200.0 * match_ratio);
+                }
 
                 sorted_buildings.emplace_back(building_idx, rank);
             }
+
+            std::sort(sorted_buildings.begin(),
+                    sorted_buildings.end(),
+                    [](const std::pair<size_t, int>& a,
+                        const std::pair<size_t, int>& b) {
+                        return (a.second == b.second)
+                                    ? (a.first < b.first)
+                                    : (a.second > b.second);
+                    });
 
             return sorted_buildings;
         }
