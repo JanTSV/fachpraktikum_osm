@@ -1105,28 +1105,28 @@ class KDSolution : public ISolution {
             
             auto sorted_buildings = sort_buildings(buildings, query, sw_lat, sw_lon, ne_lat, ne_lon);
 
-            if (!to_buildings.empty()) {
+            if (!to_buildings.empty() && !buildings.empty()) {
                 // Closest to query: Sort buildings, take heuristically best one and find nearest buildings to that
                 auto sorted_to_buildings = sort_buildings(to_buildings, query, sw_lat, sw_lon, ne_lat, ne_lon);
                 if (!sorted_to_buildings.empty()) {
                     auto [best_building_idx, _] = sorted_to_buildings[0];
                     auto& best_building = _buildings[best_building_idx];
 
-                    double dlat = ne_lat - sw_lat;
-                    double dlon = ne_lon - sw_lon;
+                    std::cout << _string_store.get(best_building.address) << std::endl;
 
-                    double new_sw_lat = best_building.location.x - dlat / 2;
-                    double new_ne_lat = best_building.location.x + dlat / 2;
-                    double new_sw_lon = best_building.location.y - dlon / 2;
-                    double new_ne_lon = best_building.location.y + dlon / 2;
-                    sorted_buildings = sort_buildings(
-                        buildings,
-                        query,
-                        new_sw_lat,
-                        new_sw_lon,
-                        new_ne_lat,
-                        new_ne_lon
-                    );
+                    size_t closest_building_index = 0;
+                    double closest_distance = std::numeric_limits<double>::max();
+
+                    for (auto building_idx : buildings) {
+                        const Building& building = _buildings[building_idx];
+                        double dist = building.location.haversine_distance(best_building.location);
+                        if (dist < closest_distance) {
+                            closest_distance = dist;
+                            closest_building_index = building_idx;
+                        }
+                    }
+
+                    sorted_buildings = { std::make_pair(closest_building_index, 0) };
                 }
             }
 
