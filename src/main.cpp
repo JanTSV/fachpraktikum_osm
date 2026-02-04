@@ -1112,7 +1112,7 @@ class KDSolution : public ISolution {
                     auto [best_building_idx, _] = sorted_to_buildings[0];
                     auto& best_building = _buildings[best_building_idx];
 
-                    std::cout << _string_store.get(best_building.address) << std::endl;
+                    // std::cout << _string_store.get(best_building.address) << std::endl;
 
                     size_t closest_building_index = 0;
                     double closest_distance = std::numeric_limits<double>::max();
