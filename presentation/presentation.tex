@@ -95,18 +95,24 @@ aspectratio=169,% for widescreen (16:9) presentations
         \item 16 Threads, 4.4 GHz
       \end{itemize}
     \end{itemize}
-    \item Speicher: Maximaler Speicher gemessen über 10 Läufe mit \textbf{\texttt{<sys/resource.h>}}
+    \item Speicher: Durchschnittlicher maximaler Speicher gemessen über 10 Läufe mit \textbf{\texttt{<sys/resource.h>}}
+    \item Zeit: Durchschnittliche Laufzeiten über 100 Läufe
+    \begin{itemize}
+      \item AtB = Areas to buildings, SN: Street names to buildings, II: Inverted Index build, SA: Suffix array build
+      \item 'Stuttgart Bahnhofstrasse 10' (II, SA)
+      \item 'Closest Rewe to Universitaetsstrasse 38' (SA2)
+    \end{itemize}
   \end{itemize}
 
   \begin{table}[h]
     \centering
     \begin{tabularx}{\textwidth}{|X|X|X|X|}
     \hline
-     & Speicher & Zeit (Laden) & Zeit (Querries) \\
+     & Speicher & Zeit (Preprocessing) & Zeit (Querries) \\
     \hline
-    Stuttgart (203 MB) \newline \newline \#buildings 1864859 \newline \#streets 195645 \newline \#admin areas 1465 & 852340 & & \\
+    Stuttgart (203 MB) \newline \newline \#buildings 1864859 \newline \#streets 195645 \newline \#admin areas 1465 & 831 MB & AtB: 4.65s \newline SN: 13.65s \newline II: 4.87s \newline SA: 0.18s \newline Total: 24.39s & II: 0.452ms \newline SA: 4.285ms \newline \newline SA2: 0.148ms \\
     \hline
-    Baden-Württemberg (624 MB) \newline \newline \#buildings 5408585 \newline \#streets 584820 \newline \#admin areas 4415 & & & \\
+    Baden-Württemberg (624 MB) \newline \newline \#buildings 5408585 \newline \#streets 584820 \newline \#admin areas 4415 & 2377 MB & AtB: 27.10s \newline SN: 77.79s \newline II: 21.81s \newline SA: 0.52s \newline Total: 130.71s & II: 4.563ms \newline SA: 56.715ms \newline \newline SA2: 0.718ms \\
     \hline
     \end{tabularx}
     \caption{Becnhmark Ergebnisse}
