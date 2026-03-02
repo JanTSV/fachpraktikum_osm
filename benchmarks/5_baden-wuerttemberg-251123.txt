@@ -1,0 +1,55 @@
+Parsing baden-wuerttemberg-251123.osm.pbf...
+Parsing done [22.65s]
+Number of buildings: 5408585
+Number of streets: 584820
+Number of admin areas: 4415
+Preprocessing...
+	Building hierarchical admin areas kdtrees...
+	Hierarchical admin areas kdtrees built [1.08ms]
+	Point in polygon test for buildings using hierarchical admin areas...
+	Assigned areas to buildings [27.49s]
+	Building buildings kdtree...
+	KDtree built [1.90s]
+	Building streets kdtree...
+	KDtree built [1.45s]
+	Interpolating street names for buildings without a street assigned to them...
+	Street names assigned [77.81s]
+	Building inverted index...
+	Inverted index built [21.68s]
+	Building suffix array...
+	Suffix array built [504.57ms]
+Preprocessing done [130.86s]
+Inverted Index:
+search_buildings_inverted_index() ran in [4.96ms]
+search_buildings_inverted_index() ran in [4.43ms]
+search_buildings_inverted_index() ran in [4.35ms]
+search_buildings_inverted_index() ran in [4.40ms]
+search_buildings_inverted_index() ran in [4.35ms]
+search_buildings_inverted_index() ran in [4.44ms]
+search_buildings_inverted_index() ran in [4.77ms]
+search_buildings_inverted_index() ran in [4.73ms]
+search_buildings_inverted_index() ran in [4.67ms]
+search_buildings_inverted_index() ran in [4.61ms]
+Suffix Array:
+search_buildings() ran in [51.81ms]
+search_buildings() ran in [53.38ms]
+search_buildings() ran in [55.85ms]
+search_buildings() ran in [55.18ms]
+search_buildings() ran in [55.82ms]
+search_buildings() ran in [54.88ms]
+search_buildings() ran in [56.77ms]
+search_buildings() ran in [55.85ms]
+search_buildings() ran in [56.19ms]
+search_buildings() ran in [55.74ms]
+Suffix Array Closest:
+search_buildings() ran in [906µs]
+search_buildings() ran in [719µs]
+search_buildings() ran in [648µs]
+search_buildings() ran in [656µs]
+search_buildings() ran in [663µs]
+search_buildings() ran in [650µs]
+search_buildings() ran in [653µs]
+search_buildings() ran in [646µs]
+search_buildings() ran in [653µs]
+search_buildings() ran in [650µs]
+Peak memory: 2376 MB

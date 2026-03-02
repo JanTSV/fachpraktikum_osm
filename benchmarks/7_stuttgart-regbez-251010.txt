@@ -1,0 +1,55 @@
+Parsing stuttgart-regbez-251010.osm.pbf...
+Parsing done [7.20s]
+Number of buildings: 1864859
+Number of streets: 195645
+Number of admin areas: 1465
+Preprocessing...
+	Building hierarchical admin areas kdtrees...
+	Hierarchical admin areas kdtrees built [268µs]
+	Point in polygon test for buildings using hierarchical admin areas...
+	Assigned areas to buildings [4.51s]
+	Building buildings kdtree...
+	KDtree built [586.90ms]
+	Building streets kdtree...
+	KDtree built [459.08ms]
+	Interpolating street names for buildings without a street assigned to them...
+	Street names assigned [13.62s]
+	Building inverted index...
+	Inverted index built [4.78s]
+	Building suffix array...
+	Suffix array built [178.87ms]
+Preprocessing done [24.15s]
+Inverted Index:
+search_buildings_inverted_index() ran in [654µs]
+search_buildings_inverted_index() ran in [420µs]
+search_buildings_inverted_index() ran in [419µs]
+search_buildings_inverted_index() ran in [414µs]
+search_buildings_inverted_index() ran in [416µs]
+search_buildings_inverted_index() ran in [412µs]
+search_buildings_inverted_index() ran in [409µs]
+search_buildings_inverted_index() ran in [407µs]
+search_buildings_inverted_index() ran in [411µs]
+search_buildings_inverted_index() ran in [411µs]
+Suffix Array:
+search_buildings() ran in [4.40ms]
+search_buildings() ran in [4.08ms]
+search_buildings() ran in [4.07ms]
+search_buildings() ran in [4.14ms]
+search_buildings() ran in [4.12ms]
+search_buildings() ran in [4.11ms]
+search_buildings() ran in [4.11ms]
+search_buildings() ran in [4.75ms]
+search_buildings() ran in [4.12ms]
+search_buildings() ran in [4.11ms]
+Suffix Array Closest:
+search_buildings() ran in [195µs]
+search_buildings() ran in [162µs]
+search_buildings() ran in [135µs]
+search_buildings() ran in [132µs]
+search_buildings() ran in [132µs]
+search_buildings() ran in [137µs]
+search_buildings() ran in [131µs]
+search_buildings() ran in [137µs]
+search_buildings() ran in [131µs]
+search_buildings() ran in [132µs]
+Peak memory: 837.941 MB

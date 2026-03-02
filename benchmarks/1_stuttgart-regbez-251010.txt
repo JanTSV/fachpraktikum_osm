@@ -1,22 +1,55 @@
 Parsing stuttgart-regbez-251010.osm.pbf...
-Parsing done [7.36s]
+Parsing done [7.10s]
 Number of buildings: 1864859
 Number of streets: 195645
 Number of admin areas: 1465
 Preprocessing...
 	Building hierarchical admin areas kdtrees...
-	Hierarchical admin areas kdtrees built [277µs]
+	Hierarchical admin areas kdtrees built [346µs]
 	Point in polygon test for buildings using hierarchical admin areas...
-	Assigned areas to buildings [4.57s]
+	Assigned areas to buildings [4.88s]
 	Building buildings kdtree...
-	KDtree built [594.80ms]
+	KDtree built [578.44ms]
 	Building streets kdtree...
-	KDtree built [457.67ms]
+	KDtree built [427.12ms]
 	Interpolating street names for buildings without a street assigned to them...
-	Street names assigned [14.30s]
+	Street names assigned [13.51s]
 	Building inverted index...
-	Inverted index built [5.21s]
+	Inverted index built [4.89s]
 	Building suffix array...
-	Suffix array built [192.38ms]
-Preprocessing done [25.33s]
-Peak memory: 829.996 MB
+	Suffix array built [176.56ms]
+Preprocessing done [24.46s]
+Inverted Index:
+search_buildings_inverted_index() ran in [685µs]
+search_buildings_inverted_index() ran in [407µs]
+search_buildings_inverted_index() ran in [417µs]
+search_buildings_inverted_index() ran in [405µs]
+search_buildings_inverted_index() ran in [409µs]
+search_buildings_inverted_index() ran in [409µs]
+search_buildings_inverted_index() ran in [476µs]
+search_buildings_inverted_index() ran in [412µs]
+search_buildings_inverted_index() ran in [405µs]
+search_buildings_inverted_index() ran in [425µs]
+Suffix Array:
+search_buildings() ran in [4.48ms]
+search_buildings() ran in [4.09ms]
+search_buildings() ran in [4.14ms]
+search_buildings() ran in [4.17ms]
+search_buildings() ran in [4.14ms]
+search_buildings() ran in [4.14ms]
+search_buildings() ran in [4.21ms]
+search_buildings() ran in [4.16ms]
+search_buildings() ran in [4.08ms]
+search_buildings() ran in [4.13ms]
+Suffix Array Closest:
+search_buildings() ran in [197µs]
+search_buildings() ran in [160µs]
+search_buildings() ran in [134µs]
+search_buildings() ran in [137µs]
+search_buildings() ran in [131µs]
+search_buildings() ran in [131µs]
+search_buildings() ran in [135µs]
+search_buildings() ran in [130µs]
+search_buildings() ran in [130µs]
+search_buildings() ran in [131µs]
+Peak memory: 834.246 MB

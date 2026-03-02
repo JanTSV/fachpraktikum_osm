@@ -1702,10 +1702,28 @@ int main(int argc, char* argv[]) {
             "application/json"
         );
     });
-    
+
     std::cout << "Server started at http://localhost:" << configuration.port << std::endl;
     svr.listen("localhost", configuration.port);
 #else
+    std::cout << "Inverted Index:" << std::endl;
+    for (size_t i = 0; i < 10; i++) {
+        std::string q = "Stuttgart Bahnhofstrasse 10";
+        solution.search_buildings_inverted_index(q, 48.8330079238934, 9.24452304840088, 48.83819845982036, 9.257644414901735);
+    }
+
+    std::cout << "Suffix Array:" << std::endl;
+    for (size_t i = 0; i < 10; i++) {
+        std::string q = "Stuttgart Bahnhofstrasse 10";
+        solution.search_buildings(q, 48.8330079238934, 9.24452304840088, 48.83819845982036, 9.257644414901735);
+    }
+
+    std::cout << "Suffix Array Closest:" << std::endl;
+    for (size_t i = 0; i < 10; i++) {
+        std::string q = "Closest Rewe to Universitaetsstrasse 38";
+        solution.search_buildings(q, 48.8330079238934, 9.24452304840088, 48.83819845982036, 9.257644414901735);
+    }
+
     std::cout << "Peak memory: " << get_memory_usage_kb() / 1024.0 << " MB\n";
 #endif
 
