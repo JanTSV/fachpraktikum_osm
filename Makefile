@@ -1,6 +1,7 @@
 CXX = g++
 CXXFLAGS_DEBUG = -Wall -Wextra -std=c++17 -Iinclude -g
 CXXFLAGS_RELEASE = -Wall -Wextra -std=c++17 -Iinclude -O3 -DNDEBUG
+CXXFLAGS_RELEASE += $(if $(BENCHMARK), -DBENCHMARK)
 CXXFLAGS_TEST = $(CXXFLAGS_DEBUG) -DTEST
 LIBS = -lz -lbz2 -lexpat -lboost_serialization
 

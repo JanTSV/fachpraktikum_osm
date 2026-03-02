@@ -42,6 +42,16 @@
 #include "string_store.hpp"
 #include "osm_handler.hpp"
 
+#ifdef BENCHMARK
+#include <sys/resource.h>
+
+size_t get_memory_usage_kb() {
+    struct rusage usage;
+    getrusage(RUSAGE_SELF, &usage);
+    return usage.ru_maxrss;
+}
+#endif
+
 static const int DEFAULT_PORT = 8080;
 using index_type = osmium::index::map::FlexMem<osmium::unsigned_object_id_type, osmium::Location>;
 using location_handler_type = osmium::handler::NodeLocationsForWays<index_type>;
@@ -1535,6 +1545,7 @@ int main(int argc, char* argv[]) {
         std::cout << "Serialization done " << get_duration(end_ser - start_ser) << std::endl;
     }   
 
+#ifndef BENCHMARK
     httplib::Server svr;
     svr.set_mount_point("/", "./www");
 
@@ -1691,9 +1702,13 @@ int main(int argc, char* argv[]) {
             "application/json"
         );
     });
-
+    
     std::cout << "Server started at http://localhost:" << configuration.port << std::endl;
     svr.listen("localhost", configuration.port);
+#else
+    std::cout << "Peak memory: " << get_memory_usage_kb() / 1024.0 << " MB\n";
+#endif
+
 #endif
 
     return 0;

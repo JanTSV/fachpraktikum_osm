@@ -6,6 +6,7 @@ aspectratio=169,% for widescreen (16:9) presentations
 
 % added on 2021_09_20
 \usepackage[ngerman]{babel}
+\usepackage{tabularx}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% mode options %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -43,7 +44,7 @@ aspectratio=169,% for widescreen (16:9) presentations
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% setup %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-\title{Fachpraktikum:\\Algorithms for OSM\\data}
+\title{Fachpraktikum: \\Algorithms for OSM \\data}
 \author[Jan Theil]{Jan Theil}
 % \institute{Institut für Nachrichtenübertragung (INÜ), Universität Stuttgart}
 
@@ -57,13 +58,59 @@ aspectratio=169,% for widescreen (16:9) presentations
 \end{frame}
 
 
-\begin{frame}{Introduction}
+\begin{frame}{Agenda}
   \begin{itemize}
-    \item What is Magic Maze
-    \item Real-time co-op game
-    \item Very little communication
-    \item Online Adaption
+    \item Generelle Informationen
+    \item Blatt 1
+    \begin{itemize}
+      \item Object Information, Wie ich nicht eingetragene Stassen finde
+    \end{itemize}
+    
+    \item Blatt 2
+    \begin{itemize}
+      \item Fast Point in Polygon Test, Mit dem Grid
+      \item Objects in View, KD-Tree mit View Box
+      \item Reverse Geocoder for all the other things, QUasi das Dynamic Ding
+    \end{itemize}
+
+    \item Blatt 3
+    \begin{itemize}
+      \item Allgemein, Substring Search: Wie packe ich Sachen in den Inverted Index, Inverted Index -> Suffix Array, Wie baue / sortiere ich das Suffix Array
+      \item Heuristics
+      \item Closest to Query
+    \end{itemize}
+
+    \item Benchmarks
   \end{itemize}
+\end{frame}
+
+
+\begin{frame}{Benchmark}
+  \begin{itemize}
+    \item Hardware
+    \begin{itemize}
+      \item 16 GB RAM 
+      \item AMD Ryzen 7 3700X 8-Core Processor
+      \begin{itemize}
+        \item 16 Threads, 4.4 GHz
+      \end{itemize}
+    \end{itemize}
+    \item Speicher: Maximaler Speicher gemessen über 10 Läufe mit \textbf{\texttt{<sys/resource.h>}}
+  \end{itemize}
+
+  \begin{table}[h]
+    \centering
+    \begin{tabularx}{\textwidth}{|X|X|X|X|}
+    \hline
+     & Speicher & Zeit (Laden) & Zeit (Querries) \\
+    \hline
+    Stuttgart (203 MB) & 852340 & & \\
+    \hline
+    Deutschland (4.6 GB) & & & \\
+    \hline
+    \end{tabularx}
+    \caption{Becnhmark Ergebnisse}
+  \end{table}
 \end{frame}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% final slide %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
