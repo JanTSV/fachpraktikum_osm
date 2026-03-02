@@ -1,0 +1,82 @@
+\documentclass[8pt, t,
+aspectratio=169,% for widescreen (16:9) presentations
+%aspectratio=43,% for traditional (4:3) presentations
+%handout%
+]{beamer}
+
+% added on 2021_09_20
+\usepackage[ngerman]{babel}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% mode options %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\mode<presentation>{\usetheme{uniS}}
+
+% define a few pictures used throughout the slides
+\pgfdeclareimage[height=1.1\paperheight]{background}{bg.jpg}  % background picture for title slide
+\pgfdeclareimage[height=1cm]{unilogo}{unilogo.pdf} % UniS logo for title slide
+\pgfdeclareimage[height=1cm]{unilogow}{unilogo_w.pdf} % (white) UniS logo for final slide
+% \pgfdeclareimage[width=2.5cm]{speaker}{} % speaker photo for final slide 
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% misc stuff %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% automatically display \sectionpage at beginning of every \section{}
+\AtBeginSection[]{%
+\begin{frame}[plain]
+  \sectionpage
+\end{frame}
+% uncomment block in order to display toc after every sectionpage
+%\usepackage{multicol}
+%\begin{frame}[c, plain]
+%  \begin{footnotesize}
+%    \begin{center}
+%      \begin{minipage}{.75\textwidth}
+%        \begin{multicols}{2}
+%          \tableofcontents[currentsection]
+%        \end{multicols}
+%      \end{minipage}
+%    \end{center}
+%  \end{footnotesize}
+%\end{frame}
+}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% setup %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\title{Fachpraktikum:\\Algorithms for OSM\\data}
+\author[Jan Theil]{Jan Theil}
+% \institute{Institut für Nachrichtenübertragung (INÜ), Universität Stuttgart}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% slides %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\begin{document}
+
+\begin{frame}[plain]
+  \titlepage
+  \photocredit{\url{https://cf.geekdo-images.com/wJfDIveg2zpTGn8E1WzEpA__imagepage/img/XatZTK6uZOSFgC_L706I94wydE4=/fit-in/900x600/filters:no_upscale():strip_icc()/pic3268473.jpg}}
+\end{frame}
+
+
+\begin{frame}{Introduction}
+  \begin{itemize}
+    \item What is Magic Maze
+    \item Real-time co-op game
+    \item Very little communication
+    \item Online Adaption
+  \end{itemize}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% final slide %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%\finalslide{<<email>>}{<<tel>>}{<<fax>>}
+% \finalslide
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% appendix %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%\appendix
+%
+%\begin{frame}{References}
+%   \renewcommand*{\bibfont}{\tiny}
+%   \printbibliography
+%\end{frame}
+
+\end{document}
