@@ -152,6 +152,84 @@ aspectratio=169,% for widescreen (16:9) presentations
   \includegraphics[height=0.5\paperheight]{StreetAssignKDSearch.pdf}
 \end{frame}
 
+
+\begin{frame}{Schneller PiP-Test mit Bins}
+  \begin{itemize}
+    \item Problem: Gebäude in OSM haben keine vollen Adressen
+    \item Ziel: Schnell allen Gebäuden volle Adressen zuweisen
+    \item Lösung (pro Admin. Area Level):
+    \begin{itemize}
+      \item Bekannt: Bounding Box / Area, Max. Bounding Box / Level
+      \item KD-Tree für Bounding Box-Zentren der Areas
+    \end{itemize}
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Schneller PiP-Test mit Bins}
+  \begin{itemize}
+    \item Problem: Gebäude in OSM haben keine vollen Adressen
+    \item Ziel: Schnell allen Gebäuden volle Adressen zuweisen
+    \item Lösung (pro Admin. Area Level):
+    \begin{itemize}
+      \item Bounding Box / Area, Max. Bounding Box / Level
+      \item KD-Tree für Bounding Box-Zentren der Areas
+    \end{itemize}
+  \end{itemize}
+
+  \centering
+  \includegraphics[height=0.37\paperheight]{AdminAreaBoundingBox.pdf}
+\end{frame}
+
+\begin{frame}{Schneller PiP-Test mit Bins}
+  \begin{itemize}
+    \item Problem: Gebäude in OSM haben keine vollen Adressen
+    \item Ziel: Schnell allen Gebäuden volle Adressen zuweisen
+    \item Lösung (pro Admin. Area Level):
+    \begin{itemize}
+      \item Bounding Box / Area, Max. Bounding Box / Level
+      \item KD-Tree für Bounding Box-Zentren der Areas
+      \item Filter mithilfe dieser KD-Trees: \textit{KD-Tree.range\_search(p, max\_half\_width, max\_half\_height)}
+    \end{itemize}
+  \end{itemize}
+
+  \centering
+  \includegraphics[height=0.53\paperheight]{AdminAreaFilter.pdf}
+\end{frame}
+
+\begin{frame}{Schneller PiP-Test mit Bins}
+  \begin{itemize}
+    \item Problem: Gebäude in OSM haben keine vollen Adressen
+    \item Ziel: Schnell allen Gebäuden volle Adressen zuweisen
+    \item Lösung (pro Admin. Area Level):
+    \begin{itemize}
+      \item Bounding Box / Area, Max. Bounding Box / Level
+      \item KD-Tree für Bounding Box-Zentren der Areas
+      \item Filter mithilfe dieser KD-Trees: \textit{KD-Tree.range\_search(p, max\_half\_width, max\_half\_height)}
+      \item $n$ (=32) horizontale Spalten über Area mit Kantenreferenzen
+    \end{itemize}
+  \end{itemize}
+
+  \centering
+  \includegraphics[height=0.53\paperheight]{AdminAreaBins.pdf}
+\end{frame}
+
+\begin{frame}{Schneller PiP-Test mit Bins}
+  \begin{itemize}
+    \item Problem: Gebäude in OSM haben keine vollen Adressen
+    \item Ziel: Schnell allen Gebäuden volle Adressen zuweisen
+    \item Lösung (pro Admin. Area Level):
+    \begin{itemize}
+      \item Bounding Box / Area, Max. Bounding Box / Level
+      \item KD-Tree für Bounding Box-Zentren der Areas
+      \item Filter mithilfe dieser KD-Trees: \textit{KD-Tree.range\_search(p, max\_half\_width, max\_half\_height)}
+      \item $n$ (=32) horizontale Spalten über Area mit Kantenreferenzen
+    \end{itemize}
+  \end{itemize}
+
+  \centering
+  \includegraphics[height=0.53\paperheight]{AdminAreaBinsSearch.pdf}
+\end{frame}
+
 \begin{frame}{Benchmark}
   \begin{itemize}
     \item Hardware
