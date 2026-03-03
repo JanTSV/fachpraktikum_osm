@@ -57,7 +57,6 @@ aspectratio=169,% for widescreen (16:9) presentations
   \photocredit{\url{https://cf.geekdo-images.com/wJfDIveg2zpTGn8E1WzEpA__imagepage/img/XatZTK6uZOSFgC_L706I94wydE4=/fit-in/900x600/filters:no_upscale():strip_icc()/pic3268473.jpg}}
 \end{frame}
 
-
 \begin{frame}{Agenda}
   \begin{itemize}
     \item Generelle Informationen
@@ -81,6 +80,53 @@ aspectratio=169,% for widescreen (16:9) presentations
     \end{itemize}
 
     \item Benchmarks
+  \end{itemize}
+\end{frame}
+
+
+\begin{frame}{Generelle Informationen}
+
+\end{frame}
+
+
+\begin{frame}{Object Information}
+  \begin{itemize}
+    \item Problem: Es gibt in OSM Gebäude, denen keine Straße zugewiesen wurde
+    \item Ziel: Möglichst passende Straße zuweisen
+    \item Lösung:
+    \begin{itemize}
+      \item Balancierter KD-Tree mit allen Straßenpunkten
+    \end{itemize}
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Object Information}
+  \begin{itemize}
+    \item Problem: Es gibt in OSM Gebäude, denen keine Straße zugewiesen wurde
+    \item Ziel: Möglichst passende Straße zuweisen
+    \item Lösung:
+    \begin{itemize}
+      \item Balancierter KD-Tree mit allen Straßenpunkten
+    \end{itemize}
+  \end{itemize}
+
+  \centering
+  \includegraphics[height=0.5\paperheight]{StreetAssignKD.pdf}
+\end{frame}
+
+\begin{frame}{Object Information}
+  \begin{itemize}
+    \item Problem: Es gibt in OSM Gebäude, denen keine Straße zugewiesen wurde
+    \item Ziel: Möglichst passende Straße zuweisen
+    \item Lösung:
+    \begin{itemize}
+      \item Balancierter KD-Tree mit allen Straßenpunkten: $\mathcal{O}(n \log(n))$
+      \item Für alle Gebäude ohne zugewiesene Straße:
+      \begin{itemize}
+        \item Finde nächsten Straßenpunkt mit KD-Tree
+        \item Weise Gebäude diese Straße zu
+      \end{itemize}
+    \end{itemize}
   \end{itemize}
 \end{frame}
 
