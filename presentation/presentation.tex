@@ -188,7 +188,7 @@ aspectratio=169,% for widescreen (16:9) presentations
     \begin{itemize}
       \item Bounding Box / Area, Max. Bounding Box / Level
       \item KD-Tree für Bounding Box-Zentren der Areas
-      \item Filter mithilfe dieser KD-Trees: \textit{KD-Tree.range\_search(p, max\_half\_width, max\_half\_height)}
+      \item Filter mithilfe dieser KD-Trees: \textit{KD-Tree.range\_search(...)} mit \textit{max\_half\_width, max\_half\_height}
     \end{itemize}
   \end{itemize}
 
@@ -204,7 +204,7 @@ aspectratio=169,% for widescreen (16:9) presentations
     \begin{itemize}
       \item Bounding Box / Area, Max. Bounding Box / Level
       \item KD-Tree für Bounding Box-Zentren der Areas
-      \item Filter mithilfe dieser KD-Trees: \textit{KD-Tree.range\_search(p, max\_half\_width, max\_half\_height)}
+      \item Filter mithilfe dieser KD-Trees: \textit{KD-Tree.range\_search(...)} mit \textit{max\_half\_width, max\_half\_height}
       \item $n$ (=32) horizontale Spalten über Area mit Kantenreferenzen
     \end{itemize}
   \end{itemize}
@@ -221,7 +221,7 @@ aspectratio=169,% for widescreen (16:9) presentations
     \begin{itemize}
       \item Bounding Box / Area, Max. Bounding Box / Level
       \item KD-Tree für Bounding Box-Zentren der Areas
-      \item Filter mithilfe dieser KD-Trees: \textit{KD-Tree.range\_search(p, max\_half\_width, max\_half\_height)}
+      \item Filter mithilfe dieser KD-Trees: \textit{KD-Tree.range\_search(...)} mit \textit{max\_half\_width, max\_half\_height}
       \item $n$ (=32) horizontale Spalten über Area mit Kantenreferenzen
     \end{itemize}
   \end{itemize}
@@ -229,6 +229,31 @@ aspectratio=169,% for widescreen (16:9) presentations
   \centering
   \includegraphics[height=0.53\paperheight]{AdminAreaBinsSearch.pdf}
 \end{frame}
+
+
+\begin{frame}{Objects in View}
+  \begin{itemize}
+    \item KD-Trees für
+    \begin{itemize}
+      \item Gebäude
+      \item Straßenpunkte
+      \item Areapunkte
+    \end{itemize}
+    \item \textit{KD-Tree.range\_search(...)} über Leaflet-Viewbox: $\mathcal{O}(\sqrt{n})$
+    \item APIs für jede KD-Tree-Anfrage, Frontend entscheidet anhand des \textit{zoomLevels}
+  \end{itemize}
+
+  \begin{columns}
+      \column{0.6\textwidth}
+      \centering
+      \includegraphics[height=0.6\paperheight]{buildings.png}
+
+      \column{0.4\textwidth}
+      \centering
+      \includegraphics[height=0.6\paperheight]{areas.png}
+  \end{columns}
+\end{frame}
+
 
 \begin{frame}{Benchmark}
   \begin{itemize}
