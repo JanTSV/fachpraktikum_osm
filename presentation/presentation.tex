@@ -255,6 +255,34 @@ aspectratio=169,% for widescreen (16:9) presentations
 \end{frame}
 
 
+\begin{frame}{Substring-Suche (Suffix Array)}
+  \begin{itemize}
+    \item Inverted Index bauen
+    \begin{itemize}
+      \item Volle Gebäudeadresse umwandeln (ß $\to$ ss, ä $\to$ ae, Trennen bei Leerzeichen, ...)
+      \item Dictionary: \{$<$Adresse[...]$>$ : \{$<$Gebäude-ID$>$, ...\}\}
+    \end{itemize}
+    \item Suffix Array aus \textit{InvertedIndex.keys()}
+    \begin{itemize}
+      \item Effiziente Konstuktion mit Rängen: $\mathcal{O}(n \log^2(n))$
+      \begin{itemize}
+        \item Sortieren nach $2^0 = 1$ Zeichen
+        \item Sortieren nach $2^1 = 2$ Zeichen
+        \item ...
+        \item Sortieren nach $2^i$ Zeichen
+      \end{itemize}
+      \item Hinzukommenden Zeichen der nächsten Iteration $2^{i + 1}$ sind Präfix eines anderen Suffixes
+      \item "Nur noch" Vergleich zweier Zahlen (ranks)
+    \end{itemize}
+    \item Query:
+    \begin{itemize}
+      \item Querytext umwandeln
+      \item $\forall q \in query: buildings = search(q) \cap_{galloping} buildings$
+    \end{itemize}
+  \end{itemize}
+\end{frame}
+
+
 \begin{frame}{Benchmark}
   \begin{itemize}
     \item Hardware
