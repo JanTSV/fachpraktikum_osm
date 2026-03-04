@@ -45,7 +45,7 @@ aspectratio=169,% for widescreen (16:9) presentations
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% setup %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 \title{Fachpraktikum: \\Algorithms for OSM \\data}
-\author[Jan Theil]{Jan Theil}
+\author[Jan Theil (3794698)]{Jan Theil}
 % \institute{Institut für Nachrichtenübertragung (INÜ), Universität Stuttgart}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% slides %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -294,6 +294,18 @@ aspectratio=169,% for widescreen (16:9) presentations
 
   \centering
   \includegraphics[height=0.53\paperheight]{search.png}
+\end{frame}
+
+
+\begin{frame}{Closest-to-Query}
+  \begin{itemize}
+    \item Syntax: \textit{Closest $\left<X\right>$ to $\left<Y\right>$}
+    \item $\widehat{Y} = sort(query(\left<Y\right>))[0]$
+    \item $\widehat{X} = min_{dist(\cdot, \widehat{Y})}\{query(\left<X\right>)\}$
+  \end{itemize}
+
+  \centering
+  \includegraphics[height=0.53\paperheight]{closest_to_search.png}
 \end{frame}
 
 
