@@ -283,6 +283,20 @@ aspectratio=169,% for widescreen (16:9) presentations
 \end{frame}
 
 
+\begin{frame}{Heuristik}
+  \begin{itemize}
+    \item Rangbasiert
+    \item \textit{rank = 0 \\
+    if (inViewBox()) rank += 200 \\
+    rank += $150 \cdot \dfrac{1}{1 + \textit{distanceToCenter()}}$ \\
+    rank += $180 \cdot \textit{queryMatch()}$}
+  \end{itemize}
+
+  \centering
+  \includegraphics[height=0.53\paperheight]{search.png}
+\end{frame}
+
+
 \begin{frame}{Benchmark}
   \begin{itemize}
     \item Hardware
